@@ -31,16 +31,23 @@ export function MessageList({
       {empty ? (
         <div className="mx-auto mt-16 max-w-md text-center">
           <Sparkles className="mx-auto mb-3 h-8 w-8 text-accent" />
-          <h2 className="text-lg font-semibold">Ask the research agent</h2>
+          <h2 className="text-lg font-semibold">Ask the research team</h2>
           <p className="mt-2 text-sm text-muted">
-            It searches your uploaded documents and the web, then answers with
-            citations. Try asking about the Aurora platform, or upload your own docs.
+            A team of agents plans the search, reads your documents and the web, then
+            fact-checks a cited answer. Try "What does AUR-2005 mean?" or upload your own docs.
           </p>
         </div>
       ) : (
         <div className="mx-auto flex max-w-3xl flex-col gap-5">
           {messages.map((m, i) => (
-            <MessageBubble key={i} role={m.role} content={m.content} />
+            <MessageBubble
+              key={i}
+              role={m.role}
+              content={m.content}
+              runId={m.runId}
+              verification={m.verification}
+              noAnswer={m.noAnswer}
+            />
           ))}
           {liveAnswer && <MessageBubble role="assistant" content={liveAnswer} streaming />}
           {streaming && !liveAnswer && (

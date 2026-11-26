@@ -1,47 +1,37 @@
-"""Comparative (pairwise) experiment: heavy vs fast model on the same dataset.
+"""Comparative (pairwise) experiment: heavy vs fast model for the answer writer.
 
-Runs two experiments, then an LLM judge picks the better answer per example.
-The result is a side-by-side comparison view in the LangSmith UI.
+Runs the full multi-agent graph twice — once with the Fact Verifier writing on
+the heavy model, once on the fast model — then an LLM judge picks the better
+answer per example. The result is a side-by-side comparison in LangSmith.
 
 Run:  uv run python -m evals.run_pairwise
 """
 
 from __future__ import annotations
 
-from langchain.agents import create_agent
-from langchain_core.messages import ToolMessage
-from langchain_openai import ChatOpenAI
 from langsmith import Client
 from langsmith.evaluation import evaluate_comparative
 
 from evals.create_dataset import DATASET_NAME
-from rag_agent.agent import SYSTEM_PROMPT
-from rag_agent.tools import build_tools
+from rag_agent.agent import build_agent, run_research
+from rag_agent.config import settings
+from rag_agent.llms import build_chat_model, override_models
 
-JUDGE_MODEL = "gpt-5.4-mini"
+HEAVY, FAST = settings.model_heavy, settings.model_fast
 
 
-def _make_target(model_name: str):
-    agent = create_agent(
-        model=ChatOpenAI(model=model_name, streaming=False),
-        tools=build_tools(),
-        system_prompt=SYSTEM_PROMPT,
-    )
+def _make_target(writer_model: str):
+    writer = build_chat_model(writer_model, streaming=False)
 
     def target(inputs: dict) -> dict:
-        result = agent.invoke({"messages": [{"role": "user", "content": inputs["question"]}]})
-        answer = result["messages"][-1].text
-        context = [
-            m.content
-            for m in result["messages"]
-            if isinstance(m, ToolMessage) and m.name == "retrieve_documents"
-        ]
-        return {"answer": answer, "context": context}
+        with override_models({"writer": writer}):
+            result = run_research(inputs["question"], graph=build_agent())
+        return {"answer": result["answer"], "context": result["contexts"]}
 
     return target
 
 
-_judge = ChatOpenAI(model=JUDGE_MODEL, temperature=0)
+_judge = build_chat_model(FAST, streaming=False)
 
 
 def ranked_preference(runs: list, example) -> dict:
@@ -71,25 +61,25 @@ def main() -> None:
     client = Client()
 
     heavy = client.evaluate(
-        _make_target("gpt-5.5"),
+        _make_target(HEAVY),
         data=DATASET_NAME,
         experiment_prefix="rag-agent-heavy",
-        metadata={"model": "gpt-5.5"},
-        max_concurrency=4,
+        metadata={"model": HEAVY},
+        max_concurrency=1,
     )
     fast = client.evaluate(
-        _make_target("gpt-5.4-mini"),
+        _make_target(FAST),
         data=DATASET_NAME,
         experiment_prefix="rag-agent-fast",
-        metadata={"model": "gpt-5.4-mini"},
-        max_concurrency=4,
+        metadata={"model": FAST},
+        max_concurrency=1,
     )
 
     comparison = evaluate_comparative(
         (heavy.experiment_name, fast.experiment_name),
         evaluators=[ranked_preference],
         randomize_order=True,
-        max_concurrency=4,
+        max_concurrency=1,
     )
     print(comparison)
 

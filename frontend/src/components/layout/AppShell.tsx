@@ -18,8 +18,8 @@ export function AppShell({
       <header className="flex items-center gap-3 border-b border-border bg-surface/60 px-4 py-2.5 backdrop-blur">
         <img src="/favicon.png" alt="" className="h-6 w-6" />
         <div className="flex flex-col leading-tight">
-          <span className="text-sm font-semibold">Agentic RAG Assistant</span>
-          <span className="text-[11px] text-muted">LangGraph · LangChain · LangSmith</span>
+          <span className="text-sm font-semibold">Document Intelligence Platform</span>
+          <span className="text-[11px] text-muted">LangGraph · Groq · LangSmith</span>
         </div>
         <div className="ml-auto flex items-center gap-2">
           {health}

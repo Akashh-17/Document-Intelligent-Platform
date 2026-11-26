@@ -19,6 +19,9 @@ function HealthBadge({ health }: { health: Health | null }) {
         <Activity className="h-3.5 w-3.5" />
         {health.web_backend}
       </span>
+      {!health.llm_configured && (
+        <span className="rounded bg-danger/15 px-1.5 py-0.5 text-danger">GROQ_API_KEY missing</span>
+      )}
       {health.langsmith_tracing && (
         <span className="rounded bg-ok/15 px-1.5 py-0.5 text-ok">tracing on</span>
       )}
@@ -42,7 +45,11 @@ export default function App() {
       chat={<ChatPanel stream={stream} />}
       inspector={
         <>
-          <ActivityTimeline timeline={stream.timeline} streaming={stream.status === "streaming"} />
+          <ActivityTimeline
+            agents={stream.agents}
+            plan={stream.plan}
+            streaming={stream.status === "streaming"}
+          />
           <SourcesPanel sources={stream.sources} />
         </>
       }

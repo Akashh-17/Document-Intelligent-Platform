@@ -1,6 +1,36 @@
 import { FileText, Globe, ExternalLink } from "lucide-react";
 import type { Source } from "@/lib/events";
 
+/** Small pills explaining *why* hybrid retrieval picked this chunk. */
+function RetrievalSignals({ source }: { source: Source }) {
+  const r = source.retrieval;
+  if (!r) return null;
+  const pills: { label: string; title: string }[] = [];
+  if (r.dense_rank != null)
+    pills.push({ label: `semantic #${r.dense_rank}`, title: "Rank in vector (embedding) search" });
+  if (r.bm25_rank != null)
+    pills.push({ label: `keyword #${r.bm25_rank}`, title: "Rank in BM25 keyword search" });
+  if (r.rerank_score != null)
+    pills.push({
+      label: `rerank ${Math.round(r.rerank_score * 100)}%`,
+      title: "Cross-encoder relevance after fusion",
+    });
+  if (!pills.length) return null;
+  return (
+    <div className="mt-1.5 flex flex-wrap gap-1">
+      {pills.map((p) => (
+        <span
+          key={p.label}
+          title={p.title}
+          className="rounded bg-surface px-1.5 py-0.5 text-[10px] font-medium text-muted ring-1 ring-border"
+        >
+          {p.label}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 export function SourceCard({ source, index }: { source: Source; index: number }) {
   const Icon = source.kind === "web" ? Globe : FileText;
   return (
@@ -30,6 +60,7 @@ export function SourceCard({ source, index }: { source: Source; index: number })
             )}
           </div>
           <p className="mt-1 line-clamp-3 text-xs text-muted">{source.snippet}</p>
+          <RetrievalSignals source={source} />
         </div>
       </div>
     </article>

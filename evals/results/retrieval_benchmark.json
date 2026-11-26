@@ -1,0 +1,45 @@
+{
+  "k": 4,
+  "results": [
+    {
+      "mode": "dense",
+      "hit@1": 37.5,
+      "hit@4": 75.0,
+      "mrr": 0.552,
+      "keyword_hit": 75.0,
+      "semantic_hit": 75.0,
+      "reject": 75.0,
+      "ms/q": 161.9
+    },
+    {
+      "mode": "bm25",
+      "hit@1": 68.8,
+      "hit@4": 81.2,
+      "mrr": 0.734,
+      "keyword_hit": 100.0,
+      "semantic_hit": 62.5,
+      "reject": 100.0,
+      "ms/q": 1.0
+    },
+    {
+      "mode": "hybrid",
+      "hit@1": 68.8,
+      "hit@4": 87.5,
+      "mrr": 0.781,
+      "keyword_hit": 100.0,
+      "semantic_hit": 75.0,
+      "reject": 75.0,
+      "ms/q": 101.1
+    },
+    {
+      "mode": "hybrid_rerank",
+      "hit@1": 75.0,
+      "hit@4": 87.5,
+      "mrr": 0.797,
+      "keyword_hit": 100.0,
+      "semantic_hit": 75.0,
+      "reject": 75.0,
+      "ms/q": 2603.6
+    }
+  ]
+}

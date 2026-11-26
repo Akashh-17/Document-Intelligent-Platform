@@ -10,7 +10,7 @@ from langsmith import Client
 # Loads .env into os.environ so LANGSMITH_* is available.
 from rag_agent.config import settings  # noqa: F401
 
-DATASET_NAME = "sainath-rag-qa"
+DATASET_NAME = "document-intelligence-qa"
 
 # Question / reference-answer pairs. Most are answerable from the sample Aurora
 # docs (doc-RAG); a couple require general/world knowledge (web search).
@@ -86,8 +86,15 @@ def main() -> None:
         )
         print(f"Created dataset: {dataset.id}")
 
-    client.create_examples(dataset_id=dataset.id, examples=EXAMPLES)
-    print(f"Added {len(EXAMPLES)} examples to '{DATASET_NAME}'.")
+    # Only add questions that aren't already in the dataset, so re-running this
+    # script is idempotent instead of duplicating every example.
+    existing = {
+        (ex.inputs or {}).get("question") for ex in client.list_examples(dataset_id=dataset.id)
+    }
+    new = [ex for ex in EXAMPLES if ex["inputs"]["question"] not in existing]
+    if new:
+        client.create_examples(dataset_id=dataset.id, examples=new)
+    print(f"Added {len(new)} new examples ({len(existing)} already present).")
 
 
 if __name__ == "__main__":

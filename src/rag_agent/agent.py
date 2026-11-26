@@ -1,36 +1,45 @@
-"""The LangGraph agent: an agentic RAG + web-search loop via create_agent."""
+"""Public entry points for the multi-agent research system."""
 
 from __future__ import annotations
 
-from langchain.agents import create_agent
+import uuid
+from typing import Any
 
-from rag_agent.llms import heavy_model
-from rag_agent.tools import build_tools
-
-SYSTEM_PROMPT = """You are a meticulous research assistant.
-
-Plan before you act, then use your tools to gather evidence:
-- `retrieve_documents` — search the user's PRIVATE document collection. Prefer this
-  for anything that may be covered by the user's own documents.
-- `web_search` — search the PUBLIC web for current events or external facts.
-
-You may call tools multiple times and combine both sources. When the document
-collection and the web disagree, say so explicitly.
-
-Always write the final answer with inline numeric citations like [1], [2] that
-map, in order, to the specific sources you actually used. If you could not find
-relevant evidence, say so honestly rather than guessing."""
+from rag_agent.agents.graph import build_graph
+from rag_agent.citations import CONFIG_KEY, CitationRegistry
 
 
 def build_agent(checkpointer=None):
-    """Return a compiled LangGraph agent.
+    """Return the compiled four-agent LangGraph (kept for API compatibility)."""
+    return build_graph(checkpointer=checkpointer)
 
-    The returned graph is automatically traced by LangSmith (via env) and
-    streamable through ``astream(stream_mode=[...])``.
+
+def run_config(thread_id: str | None = None, run_id: str | None = None) -> dict[str, Any]:
+    """Config for one turn: a fresh evidence registry plus thread/run identity."""
+    return {
+        "configurable": {
+            "thread_id": thread_id or str(uuid.uuid4()),
+            CONFIG_KEY: CitationRegistry(),
+        },
+        "run_id": run_id or str(uuid.uuid4()),
+        "recursion_limit": 40,
+    }
+
+
+def run_research(question: str, graph=None) -> dict[str, Any]:
+    """Answer one question synchronously (used by evals and scripts).
+
+    Returns the answer, the evidence texts (RAG "contexts"), the sources,
+    the plan, and the verifier's verdict.
     """
-    return create_agent(
-        model=heavy_model(),
-        tools=build_tools(),
-        system_prompt=SYSTEM_PROMPT,
-        checkpointer=checkpointer,
-    )
+    graph = graph or build_graph()
+    config = run_config()
+    state = graph.invoke({"messages": [{"role": "user", "content": question}]}, config)
+    registry: CitationRegistry = config["configurable"][CONFIG_KEY]
+    return {
+        "answer": state.get("answer", ""),
+        "contexts": [registry.text(i) for i in registry.indices()],
+        "sources": registry.sources,
+        "plan": state.get("plan"),
+        "verification": state.get("verification"),
+    }

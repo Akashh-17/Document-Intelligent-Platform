@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import re
 
-from langchain_core.messages import ToolMessage
 from langsmith import Client
 from openevals.llm import create_llm_as_judge
 from openevals.prompts import (
@@ -23,25 +22,18 @@ from openevals.prompts import (
 )
 
 from evals.create_dataset import DATASET_NAME
-from rag_agent.agent import build_agent
+from rag_agent.agent import build_agent, run_research
+from rag_agent.config import settings
 
-JUDGE_MODEL = "openai:gpt-5.4-mini"
+JUDGE_MODEL = f"groq:{settings.model_fast}"
 
-_agent = build_agent()  # no checkpointer: each example is independent
+_graph = build_agent()  # no checkpointer: each example is independent
 
 
 def target(inputs: dict) -> dict:
-    """Invoke the agent and surface both the answer and the retrieved context."""
-    result = _agent.invoke(
-        {"messages": [{"role": "user", "content": inputs["question"]}]}
-    )
-    answer = result["messages"][-1].text
-    context = [
-        m.content
-        for m in result["messages"]
-        if isinstance(m, ToolMessage) and m.name == "retrieve_documents"
-    ]
-    return {"answer": answer, "context": context}
+    """Run the multi-agent graph; surface the answer and all evidence it gathered."""
+    result = run_research(inputs["question"], graph=_graph)
+    return {"answer": result["answer"], "context": result["contexts"]}
 
 
 # --- evaluators ---------------------------------------------------------------
@@ -92,8 +84,8 @@ def main() -> None:
         data=DATASET_NAME,
         evaluators=[correctness, groundedness, retrieval_relevance, cites_sources],
         experiment_prefix="rag-agent-baseline",
-        metadata={"agent": "create_agent", "judge": JUDGE_MODEL},
-        max_concurrency=4,
+        metadata={"agent": "multi_agent_v1", "judge": JUDGE_MODEL},
+        max_concurrency=1,  # Groq free tier: stay under the tokens-per-minute limit
     )
     print(results)
 

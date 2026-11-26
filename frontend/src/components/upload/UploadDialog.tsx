@@ -15,10 +15,16 @@ export function UploadDialog({ onIngested }: { onIngested?: (chunks: number) => 
     setResult(null);
     try {
       const r = await uploadDocuments(Array.from(files));
-      setResult(`Indexed ${r.chunks_added} chunks from ${r.files.length} file(s).`);
+      const ok = r.files.filter((f) => !f.error);
+      const failed = r.files.filter((f) => f.error);
+      const lines = [`Indexed ${r.chunks_added} chunks from ${ok.length} file(s).`];
+      const updated = ok.filter((f) => f.replaced > 0).map((f) => f.name);
+      if (updated.length) lines.push(`Replaced previous version of: ${updated.join(", ")}.`);
+      for (const f of failed) lines.push(`Skipped — ${f.error}`);
+      setResult(lines.join("\n"));
       onIngested?.(r.chunks_added);
     } catch (e) {
-      setResult(`Upload failed: ${String(e)}`);
+      setResult(`Upload failed: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       setBusy(false);
     }
@@ -87,7 +93,7 @@ export function UploadDialog({ onIngested }: { onIngested?: (chunks: number) => 
               />
             </div>
 
-            {result && <p className="mt-3 text-sm text-muted">{result}</p>}
+            {result && <p className="mt-3 whitespace-pre-line text-sm text-muted">{result}</p>}
           </div>
         </div>
       )}

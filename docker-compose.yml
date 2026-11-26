@@ -3,14 +3,17 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.backend
+    # All keys (GROQ_API_KEY, TAVILY_API_KEY, LANGSMITH_*) come from .env.
+    # Don't re-declare them under `environment:` — an unset shell variable
+    # there would override the .env value with an empty string.
     env_file:
       - .env
     environment:
-      # OPENAI_API_KEY lives in the shell env, not .env — forward it through.
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
       # Keep persisted state inside the mounted volume.
       - CHROMA_DIR=/app/state/chroma_db
       - SQLITE_PATH=/app/state/memory.sqlite
+      # Cache the fastembed model weights in the volume (no re-download on rebuild).
+      - FASTEMBED_CACHE_PATH=/app/state/fastembed_cache
     volumes:
       - state:/app/state
     ports:
