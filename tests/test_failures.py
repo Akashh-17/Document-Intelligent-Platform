@@ -295,10 +295,10 @@ async def test_turn_timeout_is_a_retryable_error(monkeypatch):
         import time
 
         time.sleep(2)
-        return plan("direct", "hi")
+        return plan("direct", "What can you do?")
 
     model = ScriptedChatModel(scripts={PLANNER: [slow]})
-    events = await run_turn(model, "hi")
+    events = await run_turn(model, "What can you do?")  # not small talk: the planner runs
     err = of(events, "error")
     assert err and err[0]["retryable"] is True and "longer than" in err[0]["message"]
     assert events[-1][0] == "end"
@@ -438,3 +438,38 @@ def test_is_conversational(text, expected):
     from rag_agent.agents.planner import is_conversational
 
     assert is_conversational(text) is expected
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("thank you", True),
+        ("Thanks a lot!", True),
+        ("ok great, thank you so much 🙏", True),
+        ("hi", True),
+        ("thanks, what does AUR-2005 mean?", False),  # a real question after the thanks
+        ("What can you do?", False),  # about the assistant: the planner sees the library
+        ("ok", True),
+        ("👍", False),  # no words: let the planner decide
+    ],
+)
+def test_is_small_talk(text, expected):
+    from rag_agent.agents.planner import is_small_talk
+
+    assert is_small_talk(text) is expected
+
+
+async def test_small_talk_never_triggers_research(monkeypatch):
+    """The planner model once routed "thank you" to the web and cited wikiHow's
+    "How to Respond to Thank You". Pure pleasantries now skip the planner model."""
+    model = ScriptedChatModel(
+        scripts={
+            PLANNER: [plan("web", "how to respond to thank you", [], ["respond to thank you"])],
+            "needs no research": [AIMessage("You're welcome!")],
+        }
+    )
+    events = await run_turn(model, "thank you")
+    assert of(events, "plan")[0]["route"] == "direct"
+    assert answer(events) == "You're welcome!"
+    assert not any(k == PLANNER for k, _ in model.calls)  # no LLM call to route it
+    assert not of(events, "tool_start") and not of(events, "sources")

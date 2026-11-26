@@ -63,6 +63,27 @@ def is_conversational(message: str) -> bool:
     return bool(_ABOUT_ASSISTANT.search(text)) and len(text.split()) <= 15
 
 
+# Everything a pure pleasantry is made of ("thanks a lot!", "ok great, thank you").
+_PLEASANTRY = re.compile(
+    r"\b(?:thank you|thank u|thanks|thx|ty|cheers|hi|hello|hey|hiya|yo|bye|goodbye|see you|"
+    r"good (?:morning|afternoon|evening|night)|ok|okay|cool|great|nice|awesome|perfect|"
+    r"got it|so much|very much|a lot|again|for (?:the|your) help|for that|that's all|thats all)\b"
+)
+
+
+def is_small_talk(message: str) -> bool:
+    """True only when the WHOLE message is a pleasantry: nothing left to research.
+
+    Stricter than ``is_conversational`` on purpose — "thanks, what does AUR-2005
+    mean?" starts with thanks but is a real question, so it must not match.
+    """
+    text = message.lower().strip()
+    if not text or len(text) > 60:
+        return False
+    words = re.sub(r"[^a-z' ]+", " ", text)
+    return bool(words.split()) and not _PLEASANTRY.sub(" ", words).split()
+
+
 def fallback_plan(question: str, has_documents: bool) -> Plan:
     """Used when the planner model fails: search everything we have."""
     return Plan(
@@ -77,6 +98,16 @@ def fallback_plan(question: str, has_documents: bool) -> Plan:
 def plan_node(state: ResearchState, config: RunnableConfig) -> dict:
     question = latest_user_message(state)
     events.agent_start("planner", "Understanding the question")
+
+    if is_small_talk(question):
+        # Deterministic rule beats the model: a small planner may turn "thank you"
+        # into a web search ("how to respond to thank you"). No LLM call, no tools.
+        plan = Plan(
+            standalone_question=question,
+            route="direct",
+            rationale="Small talk: replying without research.",
+        )
+        return _finish_plan(plan, question)
 
     inventory = events.run_tool("planner", list_documents, {}, config)
     has_documents = not inventory.startswith("The document collection is empty")
@@ -111,6 +142,11 @@ def plan_node(state: ResearchState, config: RunnableConfig) -> dict:
         plan.doc_queries, plan.web_queries = [], []
     elif not has_documents and plan.route in ("documents", "both"):
         plan.route = "web"  # nothing to search locally
+    return _finish_plan(plan, question)
+
+
+def _finish_plan(plan: Plan, question: str) -> dict:
+    """Normalize the plan, report it to the UI, and reset per-turn state."""
     plan.standalone_question = plan.standalone_question.strip() or question
     if plan.route != "decline":
         question = plan.standalone_question
