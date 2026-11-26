@@ -10,6 +10,7 @@ can be validated, logged, and evaluated.
 from __future__ import annotations
 
 import logging
+import re
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
@@ -40,6 +41,26 @@ def _history(state: ResearchState) -> str:
         f"{'User' if isinstance(m, HumanMessage) else 'Assistant'}: {m.text[:400]}" for m in earlier
     ]
     return "\n".join(lines) or "(no earlier conversation)"
+
+
+_SMALL_TALK = re.compile(
+    r"^\W*(?:hi|hello|hey|yo|thanks|thank you|thx|good (?:morning|afternoon|evening|night)|"
+    r"bye|goodbye|ok|okay|cool|great|nice|got it)\b",
+    re.IGNORECASE,
+)
+_ABOUT_ASSISTANT = re.compile(
+    r"\b(?:who|what) are you\b|\bwhat can you\b|\bcan you (?:help|do)\b|\bhow do you work\b"
+    r"|\byour (?:name|capabilities|features|purpose)\b|\bhelp me\b",
+    re.IGNORECASE,
+)
+
+
+def is_conversational(message: str) -> bool:
+    """Small talk or a question about the assistant — safe to answer without research."""
+    text = message.strip()
+    if _SMALL_TALK.match(text) and len(text.split()) <= 8:
+        return True
+    return bool(_ABOUT_ASSISTANT.search(text)) and len(text.split()) <= 15
 
 
 def fallback_plan(question: str, has_documents: bool) -> Plan:
@@ -80,6 +101,12 @@ def plan_node(state: ResearchState, config: RunnableConfig) -> dict:
         plan = fallback_plan(question, has_documents)
 
     # Guard rails on the model's output.
+    if plan.route == "direct" and not is_conversational(question):
+        # Small models sometimes answer factual questions "directly" from memory;
+        # anything that isn't small talk gets researched (and an honest no-answer
+        # if nothing is found).
+        plan.route = "both" if has_documents else "web"
+        plan.rationale = "Factual question: researching instead of answering from memory."
     if plan.route == "decline":
         plan.doc_queries, plan.web_queries = [], []
     elif not has_documents and plan.route in ("documents", "both"):

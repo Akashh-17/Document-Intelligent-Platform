@@ -1,0 +1,110 @@
+{
+  "max-event-size": {
+    "hash": "ab55080930e36ff4",
+    "scores": {
+      "faithfulness": 1.0,
+      "answer_relevancy": 0.9966,
+      "context_precision": 1.0,
+      "context_recall": 0.5
+    }
+  },
+  "raw-retention": {
+    "hash": "fd1674dd097cee3f",
+    "scores": {
+      "faithfulness": 1.0,
+      "answer_relevancy": 0.9659,
+      "context_precision": 0.9167,
+      "context_recall": 1.0
+    }
+  },
+  "aur-2005": {
+    "hash": "62d29b60a1e402d3",
+    "scores": {
+      "faithfulness": 0.8,
+      "answer_relevancy": 0.9747,
+      "context_precision": 1.0,
+      "context_recall": 1.0
+    }
+  },
+  "http-504": {
+    "hash": "90e92b8c23ea7eb9",
+    "scores": {
+      "faithfulness": 1.0,
+      "answer_relevancy": 0.9497,
+      "context_precision": 1.0,
+      "context_recall": 1.0
+    }
+  },
+  "aur-1007": {
+    "hash": "f07cc38281987230",
+    "scores": {
+      "faithfulness": 1.0,
+      "answer_relevancy": 0.6484,
+      "context_precision": 1.0,
+      "context_recall": 1.0
+    }
+  },
+  "auth": {
+    "hash": "cd06ad488cd16e24",
+    "scores": {
+      "faithfulness": 1.0,
+      "answer_relevancy": 0.9136,
+      "context_precision": 0.5833,
+      "context_recall": 1.0
+    }
+  },
+  "concurrency": {
+    "hash": "4ea83d657ea8e416",
+    "scores": {
+      "faithfulness": 1.0,
+      "answer_relevancy": 0.9349,
+      "context_precision": 0.5833,
+      "context_recall": 1.0
+    }
+  },
+  "ingest-lag": {
+    "hash": "498fe481481aae8d",
+    "scores": {
+      "faithfulness": 1.0,
+      "answer_relevancy": 0.9636,
+      "context_precision": 1.0,
+      "context_recall": 1.0
+    }
+  },
+  "sev1": {
+    "hash": "585120d83f186df3",
+    "scores": {
+      "faithfulness": 0.7143,
+      "answer_relevancy": 0.9093,
+      "context_precision": 1.0,
+      "context_recall": 1.0
+    }
+  },
+  "config-rollout": {
+    "hash": "dcde69d88cd52e34",
+    "scores": {
+      "faithfulness": 1.0,
+      "answer_relevancy": 0.9344,
+      "context_precision": 1.0,
+      "context_recall": 1.0
+    }
+  },
+  "v32-size": {
+    "hash": "a7343181e6faa77b",
+    "scores": {
+      "faithfulness": 1.0,
+      "answer_relevancy": 0.9039,
+      "context_precision": 1.0,
+      "context_recall": 1.0
+    }
+  },
+  "mtls": {
+    "hash": "ea5397ad3a52521f",
+    "scores": {
+      "faithfulness": 0.9091,
+      "answer_relevancy": 0.8523,
+      "context_precision": 0.6389,
+      "context_recall": 1.0
+    }
+  }
+}

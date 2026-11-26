@@ -30,16 +30,28 @@ def run_research(question: str, graph=None) -> dict[str, Any]:
     """Answer one question synchronously (used by evals and scripts).
 
     Returns the answer, the evidence texts (RAG "contexts"), the sources,
-    the plan, and the verifier's verdict.
+    the plan, the verifier's verdict, and an ``outcome``:
+    answered | no_answer | blocked | declined | extractive.
     """
     graph = graph or build_graph()
     config = run_config()
     state = graph.invoke({"messages": [{"role": "user", "content": question}]}, config)
     registry: CitationRegistry = config["configurable"][CONFIG_KEY]
+    verification = state.get("verification") or {}
+    blocked = (state.get("blocked") or {}).get("category")
+    if blocked:
+        outcome = "declined" if blocked == "policy" else "blocked"
+    elif verification.get("confidence") == "none":
+        outcome = "no_answer"
+    elif state.get("degraded"):
+        outcome = "extractive"
+    else:
+        outcome = "answered"
     return {
         "answer": state.get("answer", ""),
         "contexts": [registry.text(i) for i in registry.indices()],
         "sources": registry.sources,
         "plan": state.get("plan"),
-        "verification": state.get("verification"),
+        "verification": verification,
+        "outcome": outcome,
     }

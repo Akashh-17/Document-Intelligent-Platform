@@ -405,3 +405,36 @@ def test_placeholder_keys_from_env_example_count_as_unset():
     )
     assert s.tavily_api_key is None and s.web_backend == "duckduckgo"
     assert s.langsmith_tracing is False  # no tracing without a real key
+
+
+# --- planner routing backstop (found by the RAGAS behaviour eval) ---------------------------
+
+
+async def test_factual_question_routed_direct_is_researched_instead(monkeypatch):
+    """The small planner once routed "Which pizza toppings does the team prefer?" to
+    `direct`, answering from memory without searching. Factual questions must be
+    researched, and with no evidence the user gets the honest no-answer."""
+    no_web_results(monkeypatch)
+    q = "Which pizza toppings does the Aurora on-call team prefer?"
+    model = ScriptedChatModel(
+        scripts={PLANNER: [plan("direct", q)], **researchers_search("pizza", "pizza")}
+    )
+    events = await run_turn(model, q)
+    assert of(events, "plan")[0]["route"] == "both"
+    assert of(events, "no_answer") and not any(k == "needs no research" for k, _ in model.calls)
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("hi!", True),
+        ("thanks a lot", True),
+        ("What can you do?", True),
+        ("Which pizza toppings does the Aurora on-call team prefer?", False),
+        ("hi, what does AUR-2005 mean and how do I fix it in production?", False),
+    ],
+)
+def test_is_conversational(text, expected):
+    from rag_agent.agents.planner import is_conversational
+
+    assert is_conversational(text) is expected
