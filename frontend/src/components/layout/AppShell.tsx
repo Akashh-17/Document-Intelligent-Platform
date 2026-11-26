@@ -122,7 +122,12 @@ export function AppShell() {
 
         {empty ? (
           <div className="min-h-0 flex-1 overflow-y-auto">
-            <EmptyState composer={composer} onPick={chat.send} docCount={library.docs?.length ?? null} />
+            <EmptyState
+              composer={composer}
+              onPick={chat.send}
+              onUpload={() => setUploadOpen(true)}
+              docs={library.docs}
+            />
           </div>
         ) : (
           <Thread

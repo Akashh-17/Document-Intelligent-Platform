@@ -118,6 +118,8 @@ export function noteFromGuardrail(action: string, detail: string): { kind: NoteK
   switch (action) {
     case "masked":
       return { kind: "masked", text: detail.replace(/ before sending anything.*$/, " before searching") };
+    case "private":
+      return { kind: "masked", text: detail };
     case "neutralized":
       return { kind: "neutralized", text: "Ignored instructions hidden inside a source" };
     case "redacted":

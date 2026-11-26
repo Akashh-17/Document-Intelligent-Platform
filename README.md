@@ -143,6 +143,10 @@ embedding and re-ranker models download once, ~150 MB). Try:
 
 **Docker:** `docker compose up --build` → UI on http://localhost:8080, API on :8000.
 
+**Using your own documents:** set `SEED_SAMPLE_DOCS=false` in `.env` and remove
+the sample files from the sidebar library (or start with an empty `chroma_db/`).
+The evaluation scripts use their own collection, so they never touch your library.
+
 Optional keys: `TAVILY_API_KEY` (better web search than the keyless fallback) and
 `LANGSMITH_API_KEY` (tracing + thumbs-up/down feedback).
 

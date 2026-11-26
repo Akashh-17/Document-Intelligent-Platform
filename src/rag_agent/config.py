@@ -49,6 +49,10 @@ class Settings(BaseSettings):
     worker_max_steps: int = 3  # tool-call rounds per research agent
     max_revisions: int = 1  # verifier-triggered rewrites of the answer
     web_fallback: bool = True  # documents found nothing -> ask the Web Researcher
+    # Keep names specific to the library (e.g. an internal product name) out of
+    # public web searches while documents are in play. See rag_agent/privacy.py.
+    web_query_privacy: bool = True
+    private_terms: str = ""  # extra comma-separated names to never send to web search
 
     # --- failure handling (Phase 3) ---
     model_fallback: bool = True  # on model failure, retry on the other tier
@@ -80,6 +84,9 @@ class Settings(BaseSettings):
     chunk_size: int = 700
     chunk_overlap: int = 100
     sample_docs_dir: str = "./data/sample_docs"
+    # Index the sample Aurora docs on startup. Turn off to start with an empty
+    # library and upload your own documents.
+    seed_sample_docs: bool = True
 
     # --- hybrid retrieval (see rag_agent/retrieval) ---
     # dense | bm25 | hybrid | hybrid_rerank

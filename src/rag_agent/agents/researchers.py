@@ -39,6 +39,8 @@ from rag_agent.agents.state import ResearchState
 from rag_agent.citations import registry_from_config
 from rag_agent.config import settings
 from rag_agent.llms import get_fallback_model, get_model
+from rag_agent.privacy import CONFIG_KEY as PRIVATE_KEY
+from rag_agent.privacy import internal_names
 from rag_agent.tools import DOCUMENT_TOOLS, WEB_TOOLS, search_documents, web_search
 from rag_agent.tools.common import emit
 
@@ -59,18 +61,37 @@ def _queries(agent: str, state: ResearchState) -> list[str]:
     return plan.get(key) or [state.get("question", "")]
 
 
+def _private_names(agent: str, state: ResearchState) -> list[str]:
+    """Internal names to keep out of web queries — only while documents are in play
+    (route documents/both, or filling a gap the documents left). For a pure web
+    question the user may mean the public thing, so nothing is held back."""
+    if agent != "web_researcher":
+        return []
+    route = (state.get("plan") or {}).get("route")
+    if route in ("documents", "both") or state.get("gap_fill"):
+        return internal_names()
+    return []
+
+
 def _task(agent: str, state: ResearchState) -> str:
+    names = _private_names(agent, state)
+    keep_private = (
+        "\nThese names are internal to the user's documents — never put them in a web "
+        f"query; search for the general concept instead: {', '.join(names)}."
+        if names
+        else ""
+    )
     if agent == "web_researcher" and state.get("gap_fill"):
         return (
             f"Research task: {state.get('question', '')}\n"
             "The private documents already answered part of this. Find public "
-            "information ONLY about: " + "; ".join(state["gap_fill"])
+            "information ONLY about: " + "; ".join(state["gap_fill"]) + keep_private
         )
     lines = [f"Research task: {state.get('question', '')}"]
     lines.append("Suggested queries: " + "; ".join(_queries(agent, state)))
     if agent == "web_researcher" and (state.get("plan") or {}).get("route") == "documents":
         lines.append("The private documents had nothing relevant; search the public web.")
-    return "\n".join(lines)
+    return "\n".join(lines) + keep_private
 
 
 def tool_error_message(exc: Exception, request) -> str:
@@ -124,6 +145,9 @@ def make_research_node(agent: str):
 
         # Safety net above the tool-call limit: model + tools steps per round.
         sub_config = {**config, "recursion_limit": 2 * settings.worker_max_steps + 4}
+        names = _private_names(agent, state)
+        if names:  # enforced in the web tools too, not just asked for in the prompt
+            sub_config["configurable"] = {**config.get("configurable", {}), PRIVATE_KEY: names}
         status = "ok"
         try:
             result = sub_agent.invoke({"messages": [HumanMessage(task)]}, sub_config)

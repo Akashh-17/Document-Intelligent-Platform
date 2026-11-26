@@ -36,7 +36,7 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(messag
 async def lifespan(app: FastAPI):
     # Auto-seed the vector store with the sample docs on first boot. Embedding
     # is CPU-bound, so keep it off the event loop.
-    seeded = await run_in_threadpool(ensure_seeded)
+    seeded = await run_in_threadpool(ensure_seeded) if settings.seed_sample_docs else 0
     if seeded:
         log.info("Seeded vector store with %d sample chunks", seeded)
     if not settings.groq_api_key:

@@ -20,7 +20,10 @@ from langchain_core.tools import tool
 
 from rag_agent.citations import registry_from_config
 from rag_agent.config import settings
+from rag_agent.privacy import CONFIG_KEY as PRIVATE_KEY
+from rag_agent.privacy import scrub_query
 from rag_agent.tools.common import (
+    emit,
     emit_sources,
     format_evidence,
     logs_attempt,
@@ -67,6 +70,36 @@ def _search_duckduckgo(query: str) -> list[dict]:
     ]
 
 
+def _keep_private(query: str, config: RunnableConfig) -> tuple[str, str]:
+    """Strip internal names from an outgoing web query (see rag_agent/privacy.py).
+
+    Returns the cleaned query and a note telling the agent what was removed
+    ("" when nothing changed). The names arrive through the run config, set by
+    the Web Researcher only while the user's documents are in play.
+    """
+    names = ((config or {}).get("configurable") or {}).get(PRIVATE_KEY) or []
+    if not names:
+        return query, ""
+    cleaned, removed = scrub_query(query, names)
+    if not removed:
+        return query, ""
+    emit(
+        {
+            "kind": "guardrail",
+            "stage": "retrieval",
+            "action": "private",
+            "detail": f"Kept {', '.join(n.title() for n in removed)} out of the web search",
+            "original": query,  # lets the UI show the query that was actually sent
+            "sent": cleaned,
+        }
+    )
+    note = (
+        f"(Internal name {', '.join(removed)} was removed from this public search; "
+        f"searched for: {cleaned or 'nothing'}.)\n"
+    )
+    return cleaned, note
+
+
 def _register_web(config: RunnableConfig, title: str, url: str | None, text: str, score=None):
     """Register a web result through the retrieval guardrail (sanitized text)."""
     return register_evidence(
@@ -89,6 +122,9 @@ def web_search(query: str, config: RunnableConfig) -> str:
 
     Returns short result snippets labelled [n]; use fetch_webpage to read one fully.
     """
+    query, note = _keep_private(query, config)
+    if not query:
+        return note + "NO_WEB_RESULTS: nothing left to search once internal names were removed."
     try:
         results = _search_tavily(query) if settings.tavily_api_key else _search_duckduckgo(query)
     except Exception as exc:  # noqa: BLE001 — rate limits, network errors: degrade gracefully
@@ -103,7 +139,7 @@ def web_search(query: str, config: RunnableConfig) -> str:
         entries.append(entry)
         bodies.append(_clean(config, entry))
     emit_sources("web_search", entries)
-    return format_evidence(entries, bodies)
+    return note + format_evidence(entries, bodies)
 
 
 # --- fetch_webpage --------------------------------------------------------------
@@ -210,6 +246,11 @@ def wikipedia_lookup(topic: str, config: RunnableConfig) -> str:
 
     Best for definitions and background ("what is ClickHouse?", "what is mTLS?").
     """
+    topic, note = _keep_private(topic, config)
+    if not topic:
+        return (
+            note + "NO_WIKIPEDIA_ARTICLE: nothing left to look up once internal names were removed."
+        )
     try:
         with httpx.Client(timeout=_TIMEOUT, headers={"User-Agent": USER_AGENT}) as client:
             found = client.get(
@@ -238,7 +279,7 @@ def wikipedia_lookup(topic: str, config: RunnableConfig) -> str:
     url = (data.get("content_urls") or {}).get("desktop", {}).get("page")
     entry = _register_web(config, f"Wikipedia: {data.get('title', titles[0])}", url, extract)
     emit_sources("wikipedia_lookup", [entry])
-    return format_evidence([entry], [_clean(config, entry)])
+    return note + format_evidence([entry], [_clean(config, entry)])
 
 
 WEB_TOOLS = [web_search, fetch_webpage, wikipedia_lookup]

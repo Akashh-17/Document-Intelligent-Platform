@@ -141,8 +141,27 @@ function applyEvent(m: ChatMessage, e: AgentEvent): ChatMessage {
         }),
       };
     case "guardrail": {
-      const target: AgentId = e.stage === "input" && e.action === "declined" ? "planner" : "guardrails";
-      return { ...m, agents: addNote(agents, target, noteFromGuardrail(e.action, e.detail)) };
+      // Internal name removed from a web query: show the query that was really sent.
+      const scrubbed =
+        e.action === "private" && e.original !== undefined
+          ? agents.map((ag) => ({
+              ...ag,
+              tools: ag.tools.map((t) =>
+                t.args?.query === e.original
+                  ? { ...t, args: { ...t.args, query: e.sent } }
+                  : t.args?.topic === e.original
+                    ? { ...t, args: { ...t.args, topic: e.sent } }
+                    : t,
+              ),
+            }))
+          : agents;
+      const target: AgentId =
+        e.stage === "input" && e.action === "declined"
+          ? "planner"
+          : e.action === "private"
+            ? "web_researcher"
+            : "guardrails";
+      return { ...m, agents: addNote(scrubbed, target, noteFromGuardrail(e.action, e.detail)) };
     }
     case "verification": {
       const { type: _t, thread_id: _id, ...verification } = e;

@@ -101,8 +101,10 @@ export type AgentEvent =
   | ({
       type: "guardrail";
       stage: "input" | "retrieval" | "output";
-      action: "masked" | "blocked" | "declined" | "neutralized" | "redacted";
+      action: "masked" | "blocked" | "declined" | "neutralized" | "redacted" | "private";
       detail: string;
+      original?: string; // "private" only: the query as the agent wrote it…
+      sent?: string; // …and as it was actually sent
     } & T)
   | ({ type: "blocked"; category: "prompt_injection" | "policy"; message: string; reasons: string[] } & T)
   | ({ type: "error"; message: string; fatal?: boolean; retryable?: boolean } & T)

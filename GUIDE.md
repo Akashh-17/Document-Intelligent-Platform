@@ -260,6 +260,7 @@ model's memory (`ANSWER_WITHOUT_EVIDENCE=false`). Turning it on answers with a
 | Retrieval | **indirect** injection in documents or web pages | strip invisible text (zero-width chars, HTML comments), neutralize instruction-like lines before any agent reads them; flag poisoned uploads |
 | Output | leaking secrets / IDs | redaction of keys, cards, Aadhaar, PAN, SSN (contact info allowed by default) |
 | Output | system-prompt leakage | 8-word shingle overlap with internal prompts → refusal |
+| Web | internal names leaking to search engines (and polluting results — "Aurora" became "Amazon Aurora") | names specific to the library are detected from document titles/file names and stripped from web queries while documents are in play, including a public-homonym prefix; the UI shows the query actually sent ([privacy.py](src/rag_agent/privacy.py)) |
 
 Two design points: checksums keep false positives low (byte counts like
 `52428800` aren't flagged as cards), and `guard_output` is the **single exit** —
