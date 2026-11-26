@@ -46,7 +46,7 @@ A user uploads documents and asks questions. The system must:
 | Re-ranker | fastembed cross-encoder `ms-marco-MiniLM-L-6-v2` | precise relevance on a short candidate list |
 | Safety classifier | **Llama Prompt Guard 2 (86M)** on Groq | fast dedicated injection/jailbreak detector |
 | API | **FastAPI** + Server-Sent Events | token streaming + live agent events |
-| UI | React 19 + Vite + Tailwind | chat, agent timeline, sources |
+| UI | React 19 + Vite + Tailwind | chat, research trace, evidence cards, library |
 | Evaluation | **RAGAS**, custom benchmarks, LangSmith (optional) | measurable quality, regression baseline |
 | Memory | LangGraph `AsyncSqliteSaver` | per-thread conversation history |
 
@@ -281,8 +281,22 @@ only checked answers are ever written to memory.
 | `error` (`retryable`) / `end` | stream lifecycle |
 
 `subgraphs=True` matters: without it, tool calls inside the research sub-agents
-would be invisible. The frontend reducer in `useAgentStream.ts` builds the
-per-agent timeline from these events.
+would be invisible.
+
+**How the UI uses them** ([frontend/src/hooks/useChat.ts](frontend/src/hooks/useChat.ts)):
+each event updates the answer it belongs to, so every message carries its own
+trace, sources and verification, and past chats are saved in the browser.
+- The **research trace** turns agent/tool events into plain language ("Searched
+  for “AUR-2005”") — live while the agents work, then folded into a one-line
+  summary. Agent names stay visible as small tags.
+- **Citations are renumbered** 1…n in reading order (the backend numbers
+  evidence turn-wide), and only cited sources are shown; the rest sit behind
+  "also searched".
+- **Evidence cards**: hovering a citation shows the passage window that best
+  matches the question, with the question's terms highlighted.
+- The upload dialog renders through a **portal** into `<body>`: an ancestor
+  with `backdrop-filter` creates a containing block for `position: fixed`
+  elements, which is what clipped the original dialog into the header.
 
 ## 11. Evaluation
 
@@ -320,7 +334,7 @@ and regression tests.
 
 ## 12. Testing strategy
 
-134 tests run **offline** in ~40 s ([tests/](tests/)).
+135 tests run **offline** in ~40 s ([tests/](tests/)).
 
 - **Scripted fake models** ([tests/fakes.py](tests/fakes.py)): replies are
   scripted *per agent* (matched by system prompt) because the Document Analyst
@@ -438,7 +452,7 @@ the behaviour checks found).
 
 **Q: How did you test LLM code deterministically?**
 Scripted fake chat models keyed by agent, driving the real graph and the real SSE
-layer; 134 tests run offline in under a minute.
+layer; 135 tests run offline in under a minute.
 
 **Q: What would you change for production?**
 Managed vector DB with native hybrid search, Redis-backed rate limiting and

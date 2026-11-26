@@ -3,11 +3,13 @@ import { useTheme } from "@/hooks/useTheme";
 
 export function ThemeToggle() {
   const { theme, toggle } = useTheme();
+  const label = theme === "dark" ? "Switch to light theme" : "Switch to dark theme";
   return (
     <button
       onClick={toggle}
-      className="flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-surface text-muted hover:text-fg"
-      title={theme === "dark" ? "Switch to light" : "Switch to dark"}
+      aria-label={label}
+      title={label}
+      className="flex h-8 w-8 items-center justify-center rounded-lg text-muted hover:bg-surface-2 hover:text-fg"
     >
       {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
     </button>

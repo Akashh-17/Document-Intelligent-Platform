@@ -1,30 +1,11 @@
-import { memo, useEffect, useState, type ReactNode, Children } from "react";
+import { Children, memo, useEffect, useState, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Copy, Check } from "lucide-react";
+import { Check, Copy } from "lucide-react";
+import { CitationChip } from "./Evidence";
 
-function scrollToCitation(n: number) {
-  const el = document.getElementById(`source-idx-${n}`);
-  if (!el) return;
-  el.scrollIntoView({ behavior: "smooth", block: "center" });
-  el.classList.add("ring-2", "ring-accent");
-  setTimeout(() => el.classList.remove("ring-2", "ring-accent"), 1400);
-}
-
-function CitationChip({ n }: { n: number }) {
-  return (
-    <button
-      onClick={() => scrollToCitation(n)}
-      className="mx-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-accent/15 px-1 align-text-top text-[11px] font-semibold text-accent hover:bg-accent/30"
-      title={`Jump to source ${n}`}
-    >
-      {n}
-    </button>
-  );
-}
-
-/** Replace [1], [2] ... inside string children with clickable chips. */
-function linkifyCitations(children: ReactNode): ReactNode {
+/** Replace [1], [2] … inside text children with citation chips. */
+function withCitations(children: ReactNode): ReactNode {
   return Children.map(children, (child) => {
     if (typeof child !== "string") return child;
     const parts: ReactNode[] = [];
@@ -66,19 +47,17 @@ function CodeBlock({ code, lang, highlight }: { code: string; lang: string; high
     };
   }, [code, lang, highlight]);
 
-  const copy = () => {
-    navigator.clipboard.writeText(code).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1200);
-    });
-  };
-
   return (
     <div className="group relative">
       <button
-        onClick={copy}
-        className="absolute right-2 top-2 z-10 rounded-md border border-border bg-surface/80 p-1 text-muted opacity-0 transition-opacity group-hover:opacity-100"
-        title="Copy code"
+        onClick={() =>
+          navigator.clipboard.writeText(code).then(() => {
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1200);
+          })
+        }
+        aria-label="Copy code"
+        className="absolute right-2 top-2 z-10 rounded-md border border-border bg-surface p-1 text-muted opacity-0 transition-opacity focus:opacity-100 group-hover:opacity-100"
       >
         {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
       </button>
@@ -96,26 +75,33 @@ function CodeBlock({ code, lang, highlight }: { code: string; lang: string; high
 export const Markdown = memo(function Markdown({
   text,
   highlight = true,
+  streaming = false,
 }: {
   text: string;
   highlight?: boolean;
+  streaming?: boolean;
 }) {
   return (
-    <div className="prose-chat text-sm leading-relaxed">
+    <div className={streaming ? "prose-answer caret-last" : "prose-answer"}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
-          p: ({ children }) => <p>{linkifyCitations(children)}</p>,
-          li: ({ children }) => <li>{linkifyCitations(children)}</li>,
-          td: ({ children }) => <td>{linkifyCitations(children)}</td>,
+          p: ({ children }) => <p>{withCitations(children)}</p>,
+          li: ({ children }) => <li>{withCitations(children)}</li>,
+          td: ({ children }) => <td>{withCitations(children)}</td>,
+          strong: ({ children }) => <strong>{withCitations(children)}</strong>,
+          a: ({ children, href }) => (
+            <a href={href} target="_blank" rel="noreferrer">
+              {children}
+            </a>
+          ),
           code: ({ className, children, ...props }) => {
             const match = /language-(\w+)/.exec(className || "");
             const isBlock = "node" in props && match;
-            const raw = String(children).replace(/\n$/, "");
-            if (!isBlock) {
-              return <code className={className}>{children}</code>;
-            }
-            return <CodeBlock code={raw} lang={match![1]} highlight={highlight} />;
+            if (!isBlock) return <code className={className}>{children}</code>;
+            return (
+              <CodeBlock code={String(children).replace(/\n$/, "")} lang={match![1]} highlight={highlight} />
+            );
           },
         }}
       >

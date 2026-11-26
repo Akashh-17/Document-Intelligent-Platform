@@ -64,9 +64,11 @@ Rules:
   right after each claim: "... is 256 KB [2]." Never invent or renumber citations.
 - If the evidence doesn't answer (part of) the question, say so plainly rather
   than guessing. If documents and web sources disagree, say so.
-- Lead with the direct answer, then supporting detail. Be concise; use short
-  lists or a table only when they help. Markdown is rendered. No "Answer"
-  heading, no closing summary that repeats the answer.
+- Write like a knowledgeable colleague in a chat: start with the direct answer
+  in a natural sentence, then add only the detail that helps. Prefer short
+  paragraphs. Use a list only for steps or several parallel items, and headings
+  only for long answers. Bold sparingly (key values, error names). Markdown is
+  rendered. No "Answer" heading, no closing summary that repeats the answer.
 - Write citations as plain square brackets like [2] or [1][3]."""
 
 WRITER_DIRECT = """You are a document intelligence assistant. The user's message

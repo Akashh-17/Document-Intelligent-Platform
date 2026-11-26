@@ -27,7 +27,8 @@ searched — instead of guessing.
 | **Failure handling** | deterministic no-answer response, model fallback across tiers, extractive answers when every model is down, tool-error recovery, timeouts, retry |
 | **Guardrails** | PII masking, prompt-injection blocking (heuristics + Llama Prompt Guard 2), indirect-injection sanitizing of documents/web pages, output redaction, prompt-leak detection, rate limiting |
 | **Evaluation** | RAGAS (faithfulness, answer relevancy, context precision/recall) + behaviour checks (abstention, block rate) + a no-LLM retrieval benchmark |
-| **Observability** | live agent timeline in the UI, LangSmith tracing and feedback (optional) |
+| **Interface** | ChatGPT-style chat with saved conversations, a live research trace per answer, citation chips that open the exact source passage, a document library, light/dark themes |
+| **Observability** | LangSmith tracing and answer feedback (optional) |
 
 ## Architecture
 
@@ -148,7 +149,7 @@ Optional keys: `TAVILY_API_KEY` (better web search than the keyless fallback) an
 ## Evaluation and tests
 
 ```bash
-uv run pytest                                  # 134 tests, offline (scripted fake models)
+uv run pytest                                  # 135 tests, offline (scripted fake models)
 uv run python -m evals.retrieval_benchmark     # retrieval modes compared, no LLM
 uv run python -m evals.ragas_eval              # RAGAS + behaviour report (uses Groq)
 ```
@@ -168,8 +169,8 @@ src/rag_agent/
   api.py        FastAPI + SSE    streaming.py  graph events -> SSE
   llms.py       Groq models, per-role tiers, fallbacks
 evals/          golden_set · ragas_eval · retrieval_benchmark · LangSmith scripts
-frontend/src/   React UI: chat, agent timeline, sources, no-answer card
-tests/          134 tests
+frontend/src/   React UI: chat, research trace, evidence cards, sources, library
+tests/          135 tests
 ```
 
 **[GUIDE.md](GUIDE.md)** is the full study guide: how a request flows through the

@@ -19,13 +19,14 @@ from rag_agent.guardrails import RateLimiter
 from rag_agent.ingest import ensure_seeded, ingest_files
 from rag_agent.schemas import (
     ChatRequest,
+    DocumentInfo,
     FeedbackRequest,
     HealthResponse,
     IngestFileResult,
     IngestResponse,
 )
 from rag_agent.streaming import agent_event_stream
-from rag_agent.vectorstore import collection_count
+from rag_agent.vectorstore import collection_count, delete_by_source, source_stats
 
 log = logging.getLogger("rag_agent")
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
@@ -155,6 +156,22 @@ async def chat_stream(req: ChatRequest, request: Request) -> EventSourceResponse
         generator,
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+@app.get("/api/documents", response_model=list[DocumentInfo])
+async def list_documents() -> list[DocumentInfo]:
+    """The knowledge base, one entry per uploaded file."""
+    stats = await run_in_threadpool(source_stats)
+    return [DocumentInfo(**s) for s in stats]
+
+
+@app.delete("/api/documents/{name}")
+async def delete_document(name: str) -> dict:
+    """Remove a file and all its chunks from the knowledge base."""
+    removed = await run_in_threadpool(delete_by_source, name)
+    if not removed:
+        raise HTTPException(status_code=404, detail=f"No document named '{name}'.")
+    return {"deleted": name, "chunks_removed": removed}
 
 
 @app.post("/api/feedback")

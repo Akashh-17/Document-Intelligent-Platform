@@ -54,3 +54,15 @@ def test_oversized_file_is_skipped(client, monkeypatch):
     body = client.post("/api/ingest", files=[("files", ("big.txt", b"hello", "text/plain"))]).json()
     assert body["chunks_added"] == 0
     assert "larger than" in body["files"][0]["error"]
+
+
+def test_document_library_list_and_delete(client):
+    client.post(
+        "/api/ingest",
+        files=[("files", ("lib-test.md", b"# Lib test\nZebra facts.", "text/markdown"))],
+    )
+    docs = {d["source"]: d for d in client.get("/api/documents").json()}
+    assert docs["lib-test.md"]["chunks"] == 1 and docs["lib-test.md"]["title"] == "Lib test"
+    assert client.delete("/api/documents/lib-test.md").json()["chunks_removed"] == 1
+    assert "lib-test.md" not in {d["source"] for d in client.get("/api/documents").json()}
+    assert client.delete("/api/documents/lib-test.md").status_code == 404

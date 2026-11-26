@@ -25,7 +25,7 @@ export interface Source {
   };
 }
 
-export type Route = "documents" | "web" | "both" | "direct";
+export type Route = "documents" | "web" | "both" | "direct" | "decline" | "blocked";
 
 export interface PlanInfo {
   route: Route;

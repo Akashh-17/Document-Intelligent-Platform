@@ -30,6 +30,13 @@ class IngestResponse(BaseModel):
     files: list[IngestFileResult]
 
 
+class DocumentInfo(BaseModel):
+    source: str
+    title: str
+    chunks: int
+    pages: int | None = None
+
+
 class HealthResponse(BaseModel):
     status: str
     llm_provider: str

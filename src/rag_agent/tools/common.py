@@ -14,7 +14,7 @@ from rag_agent.guardrails.sanitize import sanitize_evidence
 from rag_agent.retrieval import RetrievedChunk
 from rag_agent.vectorstore import list_sources
 
-SNIPPET_CHARS = 300
+SNIPPET_CHARS = 1200  # passage text sent to the UI (the evidence card picks the relevant part)
 
 
 def emit(payload: dict) -> None:

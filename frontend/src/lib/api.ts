@@ -62,3 +62,21 @@ export async function sendFeedback(runId: string, score: number): Promise<boolea
 }
 
 export { errorDetail };
+
+export interface DocumentInfo {
+  source: string;
+  title: string;
+  chunks: number;
+  pages?: number | null;
+}
+
+export async function listDocuments(): Promise<DocumentInfo[]> {
+  const res = await fetch("/api/documents");
+  if (!res.ok) throw new Error(await errorDetail(res, "Loading documents"));
+  return res.json();
+}
+
+export async function deleteDocument(name: string): Promise<void> {
+  const res = await fetch(`/api/documents/${encodeURIComponent(name)}`, { method: "DELETE" });
+  if (!res.ok) throw new Error(await errorDetail(res, "Removing the document"));
+}
