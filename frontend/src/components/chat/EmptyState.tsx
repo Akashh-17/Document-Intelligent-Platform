@@ -73,6 +73,13 @@ function suggestionsFor(docs: DocumentInfo[] | null): Suggestion[] {
     label: "Ask anything on the web",
     question: "What is retrieval-augmented generation, in simple terms?",
   });
+  if (!docs?.length) {
+    out.push({
+      icon: BookOpenCheck,
+      label: "Get a cited explanation",
+      question: "What is the difference between precision and recall?",
+    });
+  }
   out.push(INJECTION);
   return out.slice(0, 4);
 }
