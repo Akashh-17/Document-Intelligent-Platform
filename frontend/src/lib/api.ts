@@ -31,6 +31,7 @@ export interface IngestFileResult {
   chunks: number;
   replaced: number;
   error?: string | null;
+  warnings?: string[];
 }
 
 export interface IngestResult {

@@ -60,6 +60,14 @@ export function SourceCard({ source, index }: { source: Source; index: number })
             )}
           </div>
           <p className="mt-1 line-clamp-3 text-xs text-muted">{source.snippet}</p>
+          {source.guardrail && (
+            <span
+              title="The retrieval guardrail removed text that tried to instruct the AI"
+              className="mt-1.5 inline-block rounded bg-warn/15 px-1.5 py-0.5 text-[10px] font-medium text-warn"
+            >
+              ⚠ {source.guardrail}
+            </span>
+          )}
           <RetrievalSignals source={source} />
         </div>
       </div>

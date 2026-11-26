@@ -19,6 +19,7 @@ from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from rag_agent.config import settings
+from rag_agent.guardrails.sanitize import sanitize_evidence
 from rag_agent.vectorstore import add_chunks, delete_by_source, list_sources
 
 TEXT_EXTS = {".txt", ".md", ".markdown"}
@@ -36,6 +37,7 @@ class FileResult:
     chunks: int = 0
     replaced: int = 0
     error: str | None = None
+    warnings: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -126,7 +128,29 @@ def index_documents(docs: list[Document], source: str) -> FileResult:
     replaced = delete_by_source(source)
     if chunks:
         add_chunks(chunks, ids=[_chunk_id(source, i, c.page_content) for i, c in enumerate(chunks)])
-    return FileResult(name=source, chunks=len(chunks), replaced=replaced)
+    return FileResult(
+        name=source, chunks=len(chunks), replaced=replaced, warnings=_injection_warnings(chunks)
+    )
+
+
+def _injection_warnings(chunks: list[Document]) -> list[str]:
+    """Flag uploads that contain text aimed at an AI (indirect prompt injection).
+
+    The file is still indexed — it may be legitimate — but the user is told, and
+    the retrieval guardrail neutralizes those lines whenever they're used.
+    """
+    flagged = [
+        c.metadata.get("page") or i + 1
+        for i, c in enumerate(chunks)
+        if sanitize_evidence(c.page_content).changed
+    ]
+    if not flagged:
+        return []
+    where = ", ".join(str(x) for x in flagged[:5]) + ("…" if len(flagged) > 5 else "")
+    return [
+        f"Contains instruction-like or hidden text aimed at an AI (section/page {where}). "
+        "It will be neutralized whenever this file is used as evidence."
+    ]
 
 
 def ingest_files(files: list[tuple[str, bytes]]) -> IngestReport:

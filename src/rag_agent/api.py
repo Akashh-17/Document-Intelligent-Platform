@@ -15,6 +15,7 @@ from starlette.concurrency import run_in_threadpool
 
 from rag_agent.agent import build_agent
 from rag_agent.config import settings
+from rag_agent.guardrails import RateLimiter
 from rag_agent.ingest import ensure_seeded, ingest_files
 from rag_agent.schemas import (
     ChatRequest,
@@ -64,6 +65,9 @@ def _get_agent(request: Request):
         request.app.state.agent = build_agent(checkpointer=request.app.state.checkpointer)
     return request.app.state.agent
 
+
+# Each chat turn costs several LLM calls on a shared quota: cap requests per client.
+_rate_limiter = RateLimiter(settings.rate_limit_per_minute)
 
 _SAFE_NAME = re.compile(r"[^\w.\- ()]+")
 
@@ -117,7 +121,9 @@ async def ingest(files: list[UploadFile] = File(...)) -> IngestResponse:
     # streams keep flowing while a large upload is being indexed.
     report = await run_in_threadpool(ingest_files, payload)
     results = [
-        IngestFileResult(name=r.name, chunks=r.chunks, replaced=r.replaced, error=r.error)
+        IngestFileResult(
+            name=r.name, chunks=r.chunks, replaced=r.replaced, error=r.error, warnings=r.warnings
+        )
         for r in report.files
     ] + rejected
     return IngestResponse(chunks_added=report.chunks_added, files=results)
@@ -125,6 +131,14 @@ async def ingest(files: list[UploadFile] = File(...)) -> IngestResponse:
 
 @app.post("/api/chat/stream")
 async def chat_stream(req: ChatRequest, request: Request) -> EventSourceResponse:
+    client = request.client.host if request.client else "unknown"
+    wait = _rate_limiter.check(client)
+    if wait is not None:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Too many requests — please wait {wait:.0f}s and try again.",
+            headers={"Retry-After": str(int(wait) + 1)},
+        )
     thread_id = req.thread_id or str(uuid.uuid4())
     try:
         agent = _get_agent(request)

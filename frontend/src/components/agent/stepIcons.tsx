@@ -11,6 +11,7 @@ import {
   ListChecks,
   ScanSearch,
   ShieldCheck,
+  ShieldHalf,
   StickyNote,
   UnfoldVertical,
   Wrench,
@@ -19,6 +20,7 @@ import {
 import type { AgentId } from "@/lib/events";
 
 export const AGENT_ICONS: Record<AgentId, LucideIcon> = {
+  guardrails: ShieldHalf,
   planner: Compass,
   doc_analyst: FileSearch,
   web_researcher: Globe,

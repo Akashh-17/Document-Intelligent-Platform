@@ -20,7 +20,12 @@ from langchain_core.tools import tool
 
 from rag_agent.citations import registry_from_config
 from rag_agent.config import settings
-from rag_agent.tools.common import SNIPPET_CHARS, emit_sources, format_evidence, logs_attempt
+from rag_agent.tools.common import (
+    emit_sources,
+    format_evidence,
+    logs_attempt,
+    register_evidence,
+)
 
 USER_AGENT = "DocumentIntelligencePlatform/0.2 (educational RAG project)"
 _TIMEOUT = httpx.Timeout(10.0, connect=5.0)
@@ -63,17 +68,18 @@ def _search_duckduckgo(query: str) -> list[dict]:
 
 
 def _register_web(config: RunnableConfig, title: str, url: str | None, text: str, score=None):
-    return registry_from_config(config).register(
+    """Register a web result through the retrieval guardrail (sanitized text)."""
+    return register_evidence(
+        registry_from_config(config),
         key=f"web:{url or title}",
-        source={
-            "kind": "web",
-            "title": title,
-            "url": url,
-            "snippet": text[:SNIPPET_CHARS],
-            "score": score,
-        },
+        source={"kind": "web", "title": title, "url": url, "score": score},
         text=text,
     )
+
+
+def _clean(config: RunnableConfig, entry: dict) -> str:
+    """The guardrail-sanitized text stored for ``entry``."""
+    return registry_from_config(config).text(entry["index"])
 
 
 @tool
@@ -93,8 +99,9 @@ def web_search(query: str, config: RunnableConfig) -> str:
     entries, bodies = [], []
     for r in results:
         body = r["content"][:1200]
-        entries.append(_register_web(config, r["title"], r["url"], body, r["score"]))
-        bodies.append(body)
+        entry = _register_web(config, r["title"], r["url"], body, r["score"])
+        entries.append(entry)
+        bodies.append(_clean(config, entry))
     emit_sources("web_search", entries)
     return format_evidence(entries, bodies)
 
@@ -187,7 +194,7 @@ def fetch_webpage(url: str, config: RunnableConfig) -> str:
     entry = _register_web(config, title or url, url, body)
     emit_sources("fetch_webpage", [entry])
     more = " (truncated)" if len(text) > _MAX_PAGE_CHARS else ""
-    return format_evidence([entry], [body + more])
+    return format_evidence([entry], [_clean(config, entry) + more])
 
 
 # --- wikipedia_lookup -------------------------------------------------------------
@@ -231,7 +238,7 @@ def wikipedia_lookup(topic: str, config: RunnableConfig) -> str:
     url = (data.get("content_urls") or {}).get("desktop", {}).get("page")
     entry = _register_web(config, f"Wikipedia: {data.get('title', titles[0])}", url, extract)
     emit_sources("wikipedia_lookup", [entry])
-    return format_evidence([entry], [extract])
+    return format_evidence([entry], [_clean(config, entry)])
 
 
 WEB_TOOLS = [web_search, fetch_webpage, wikipedia_lookup]

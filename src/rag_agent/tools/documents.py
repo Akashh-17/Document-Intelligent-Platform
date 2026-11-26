@@ -22,6 +22,7 @@ from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import tool
 
 from rag_agent.citations import registry_from_config
+from rag_agent.guardrails.sanitize import sanitize_evidence
 from rag_agent.llms import with_fallback
 from rag_agent.retrieval import RetrievedChunk, hybrid_search
 from rag_agent.tools.common import (
@@ -42,7 +43,8 @@ def _evidence_result(tool_name: str, hits: list[RetrievedChunk], config: Runnabl
     registry = registry_from_config(config)
     entries = [register_chunk(registry, h) for h in hits]
     emit_sources(tool_name, entries)
-    return format_evidence(entries, [h.text for h in hits])
+    # bodies come from the registry: the guardrail-sanitized text, never the raw chunk
+    return format_evidence(entries, [registry.text(e["index"]) for e in entries])
 
 
 @tool
@@ -121,7 +123,7 @@ def summarize_document(document: str, config: RunnableConfig) -> str:
     if source is None:
         return unknown_source_message(document)
     rows = chunks_for_source(source)
-    full = "\n\n".join(text for _, text, _ in rows)
+    full = "\n\n".join(sanitize_evidence(text).text for _, text, _ in rows)
     truncated = len(full) > _SUMMARY_INPUT_CHARS
     model = with_fallback("summarizer", lambda m: m)
     reply = model.invoke(

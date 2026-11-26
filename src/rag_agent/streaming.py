@@ -46,6 +46,8 @@ _CUSTOM_PASSTHROUGH = {
     "no_answer",
     "degraded",
     "replace_answer",
+    "guardrail",
+    "blocked",
 }
 
 

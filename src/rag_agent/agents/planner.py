@@ -80,11 +80,15 @@ def plan_node(state: ResearchState, config: RunnableConfig) -> dict:
         plan = fallback_plan(question, has_documents)
 
     # Guard rails on the model's output.
-    if not has_documents and plan.route in ("documents", "both"):
+    if plan.route == "decline":
+        plan.doc_queries, plan.web_queries = [], []
+    elif not has_documents and plan.route in ("documents", "both"):
         plan.route = "web"  # nothing to search locally
     plan.standalone_question = plan.standalone_question.strip() or question
-    plan.doc_queries = [q for q in plan.doc_queries if q.strip()][:3] or [plan.standalone_question]
-    plan.web_queries = [q for q in plan.web_queries if q.strip()][:2] or [plan.standalone_question]
+    if plan.route != "decline":
+        question = plan.standalone_question
+        plan.doc_queries = [q for q in plan.doc_queries if q.strip()][:3] or [question]
+        plan.web_queries = [q for q in plan.web_queries if q.strip()][:2] or [question]
 
     emit(
         {
@@ -121,4 +125,5 @@ def route_after_plan(state: ResearchState) -> list[str]:
         "web": ["web_researcher"],
         "both": ["doc_analyst", "web_researcher"],  # run in parallel
         "direct": ["compose"],
+        "decline": ["decline"],
     }.get(route, ["doc_analyst", "web_researcher"])

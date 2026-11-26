@@ -2,7 +2,7 @@
 
 export type StepStatus = "running" | "done" | "error";
 
-export type AgentId = "planner" | "doc_analyst" | "web_researcher" | "verifier";
+export type AgentId = "guardrails" | "planner" | "doc_analyst" | "web_researcher" | "verifier";
 
 export interface Source {
   id: string;
@@ -13,6 +13,8 @@ export interface Source {
   url?: string | null;
   snippet: string;
   score?: number | null;
+  /** Set when the retrieval guardrail removed instruction-like text. */
+  guardrail?: string;
   /** Hybrid-retrieval signals (document sources only). */
   retrieval?: {
     dense_rank?: number | null;
@@ -96,5 +98,12 @@ export type AgentEvent =
   | ({ type: "no_answer" } & NoAnswer & T)
   | ({ type: "degraded"; reason: string } & T)
   | ({ type: "replace_answer"; text: string } & T)
+  | ({
+      type: "guardrail";
+      stage: "input" | "retrieval" | "output";
+      action: "masked" | "blocked" | "declined" | "neutralized" | "redacted";
+      detail: string;
+    } & T)
+  | ({ type: "blocked"; category: "prompt_injection" | "policy"; message: string; reasons: string[] } & T)
   | ({ type: "error"; message: string; fatal?: boolean; retryable?: boolean } & T)
   | ({ type: "end"; run_id?: string } & T);

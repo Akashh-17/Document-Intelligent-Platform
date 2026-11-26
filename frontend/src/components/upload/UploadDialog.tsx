@@ -21,6 +21,7 @@ export function UploadDialog({ onIngested }: { onIngested?: (chunks: number) => 
       const updated = ok.filter((f) => f.replaced > 0).map((f) => f.name);
       if (updated.length) lines.push(`Replaced previous version of: ${updated.join(", ")}.`);
       for (const f of failed) lines.push(`Skipped — ${f.error}`);
+      for (const f of ok) for (const w of f.warnings ?? []) lines.push(`⚠ ${f.name}: ${w}`);
       setResult(lines.join("\n"));
       onIngested?.(r.chunks_added);
     } catch (e) {

@@ -22,7 +22,6 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from langchain_core.messages import AIMessage
 from langchain_core.runnables import RunnableConfig
 
 from rag_agent.agents import events
@@ -74,7 +73,6 @@ def no_answer_node(state: ResearchState, config: RunnableConfig) -> dict:
     events.agent_end("verifier", "No answer found — explained what was searched.")
     return {
         "answer": result["markdown"],
-        "messages": [AIMessage(content=result["markdown"])],
         "verification": verification,
     }
 

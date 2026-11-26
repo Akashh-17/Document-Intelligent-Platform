@@ -47,6 +47,7 @@ export function MessageList({
               runId={m.runId}
               verification={m.verification}
               noAnswer={m.noAnswer}
+              blocked={m.blocked}
             />
           ))}
           {liveAnswer && <MessageBubble role="assistant" content={liveAnswer} streaming />}

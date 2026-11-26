@@ -20,6 +20,7 @@ AGENT_LABELS = {
     "doc_analyst": "Document Analyst",
     "web_researcher": "Web Researcher",
     "verifier": "Fact Verifier",
+    "guardrails": "Guardrails",
 }
 
 

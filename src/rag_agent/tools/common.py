@@ -9,6 +9,8 @@ import inspect
 from langgraph.config import get_stream_writer
 
 from rag_agent.citations import CitationRegistry, registry_from_config
+from rag_agent.config import settings
+from rag_agent.guardrails.sanitize import sanitize_evidence
 from rag_agent.retrieval import RetrievedChunk
 from rag_agent.vectorstore import list_sources
 
@@ -30,15 +32,47 @@ def emit_sources(tool_name: str, sources: list[dict]) -> None:
         emit({"kind": "sources", "tool": tool_name, "sources": sources})
 
 
+def register_evidence(
+    registry: CitationRegistry, key: str, source: dict, text: str, ref: dict | None = None
+) -> dict:
+    """Register evidence AFTER the retrieval guardrail has cleaned it.
+
+    Hidden text and instruction-like lines (indirect prompt injection) are
+    neutralized here, so no agent ever reads the raw text. The source is
+    flagged so the UI can show that something was removed.
+    """
+    clean = sanitize_evidence(text) if settings.guardrails_enabled else None
+    if clean is not None and clean.changed:
+        text = clean.text
+        source = {**source, "guardrail": "instruction-like text removed"}
+        emit(
+            {
+                "kind": "guardrail",
+                "stage": "retrieval",
+                "action": "neutralized",
+                "detail": f"Removed instruction-like text from {source.get('title', 'a source')}"
+                + (f" ({', '.join(sorted(set(clean.removed)))})" if clean.removed else "")
+                + (
+                    f"; stripped {clean.hidden_chars} hidden element(s)"
+                    if clean.hidden_chars
+                    else ""
+                ),
+            }
+        )
+    return registry.register(
+        key=key, source={**source, "snippet": text[:SNIPPET_CHARS]}, text=text, ref=ref
+    )
+
+
 def register_chunk(registry: CitationRegistry, hit: RetrievedChunk) -> dict:
     md = hit.metadata
     title = hit.source + (f" (p. {md['page']})" if md.get("page") else "")
-    return registry.register(
+    return register_evidence(
+        registry,
         key=f"doc:{hit.id}",
         source={
             "kind": "document",
             "title": title,
-            "snippet": hit.text[:SNIPPET_CHARS],
             "score": round(hit.relevance, 3),
             "retrieval": hit.signals(),
         },

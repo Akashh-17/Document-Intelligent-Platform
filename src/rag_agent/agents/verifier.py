@@ -18,9 +18,8 @@ from __future__ import annotations
 import logging
 import re
 
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
-from langgraph.graph import END
 
 from rag_agent.agents import events
 from rag_agent.agents.planner import _history
@@ -156,7 +155,6 @@ def coverage_backstop(answer: str, judged: str, has_citations: bool) -> str:
     if not has_citations or (first and _ADMITS_MISSING.search(first.group(0))):
         return "none"
     return "partial"
-
 
 
 def compose_node(state: ResearchState, config: RunnableConfig) -> dict:
@@ -348,7 +346,7 @@ def verify_node(state: ResearchState, config: RunnableConfig) -> dict:
 def _finalise(answer: str, verification: dict) -> dict:
     emit({"kind": "verification", **verification})
     events.agent_end("verifier", f"Confidence: {verification['confidence']}")
-    return {"messages": [AIMessage(content=answer)], "verification": verification}
+    return {"answer": answer, "verification": verification}
 
 
 def route_after_verify(state: ResearchState) -> str:
@@ -357,4 +355,4 @@ def route_after_verify(state: ResearchState) -> str:
         return "no_answer"
     if state.get("gap_fill"):
         return "web_researcher"
-    return END if state.get("verification") else "compose"
+    return "guard_output" if state.get("verification") else "compose"

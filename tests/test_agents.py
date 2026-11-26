@@ -102,7 +102,7 @@ async def test_both_route_runs_research_agents_in_parallel_and_verifies():
     events = await run_turn(model, "What is AUR-3001 and what is mTLS?")
 
     started = [d["agent"] for d in of(events, "agent_start")]
-    assert started[0] == "planner" and started[-1] == "verifier"
+    assert started[:2] == ["guardrails", "planner"] and started[-1] == "verifier"
     assert {"doc_analyst", "web_researcher"} <= set(started)
     assert of(events, "plan")[0]["route"] == "both"
 
@@ -137,7 +137,7 @@ async def test_direct_route_skips_research_and_fact_check():
         }
     )
     events = await run_turn(model, "hello")
-    assert [d["agent"] for d in of(events, "agent_start")] == ["planner", "verifier"]
+    assert [d["agent"] for d in of(events, "agent_start")] == ["guardrails", "planner", "verifier"]
     assert answer(events) == "Hi! Ask me about your documents."
     assert of(events, "verification")[0]["confidence"] == "n/a"
     assert not any(k == JUDGE for k, _ in model.calls)

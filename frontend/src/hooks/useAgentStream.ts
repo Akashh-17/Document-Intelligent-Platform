@@ -34,6 +34,7 @@ export interface ChatMessage {
   runId?: string;
   verification?: Verification;
   noAnswer?: NoAnswer;
+  blocked?: "prompt_injection" | "policy";
 }
 
 interface StreamState {
@@ -45,6 +46,7 @@ interface StreamState {
   plan?: PlanInfo;
   verification?: Verification;
   noAnswer?: NoAnswer;
+  blocked?: "prompt_injection" | "policy";
   error?: string;
   retryable?: boolean;
   threadId?: string;
@@ -60,6 +62,7 @@ const initial: StreamState = {
 };
 
 const LABELS: Record<AgentId, string> = {
+  guardrails: "Guardrails",
   planner: "Query Planner",
   doc_analyst: "Document Analyst",
   web_researcher: "Web Researcher",
@@ -82,6 +85,7 @@ function commitAnswer(s: StreamState): ChatMessage[] {
           runId: s.runId,
           verification: s.verification,
           noAnswer: s.noAnswer,
+          blocked: s.blocked,
         },
       ]
     : s.messages;
@@ -113,6 +117,7 @@ function reducer(s: StreamState, a: Action): StreamState {
       plan: undefined,
       verification: undefined,
       noAnswer: undefined,
+      blocked: undefined,
       error: undefined,
       retryable: undefined,
       runId: undefined,
@@ -207,6 +212,17 @@ function reducer(s: StreamState, a: Action): StreamState {
     }
     case "replace_answer":
       return { ...s, answer: e.text };
+    case "guardrail":
+      return {
+        ...s,
+        agents: withAgent(s, "guardrails", (ag) => ({
+          ...ag,
+          status: e.action === "blocked" || e.action === "declined" ? "error" : ag.status,
+          tools: [...ag.tools, note(`guard-${ag.tools.length}`, e.detail)],
+        })),
+      };
+    case "blocked":
+      return { ...s, answer: e.message, blocked: e.category };
     case "degraded":
       return {
         ...s,

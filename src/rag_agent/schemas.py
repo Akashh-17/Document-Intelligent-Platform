@@ -22,6 +22,7 @@ class IngestFileResult(BaseModel):
     chunks: int
     replaced: int = 0
     error: str | None = None
+    warnings: list[str] = []
 
 
 class IngestResponse(BaseModel):

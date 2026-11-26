@@ -59,6 +59,15 @@ class Settings(BaseSettings):
     near_miss_count: int = 3  # "closest passages" shown when nothing was relevant
     evidence_char_budget: int = 9000  # evidence text given to the writer (~2.3K tokens)
 
+    # --- guardrails (Phase 4) ---
+    guardrails_enabled: bool = True
+    pii_masking: bool = True  # mask personal data in user input before any LLM/web call
+    redact_contact_info: bool = False  # also redact emails/phones in answers
+    prompt_guard_enabled: bool = True  # Llama Prompt Guard 2 on user input (Groq)
+    prompt_guard_model: str = "meta-llama/llama-prompt-guard-2-86m"
+    prompt_guard_threshold: float = 0.9
+    rate_limit_per_minute: int = 20  # chat requests per client (0 = off)
+
     # --- embeddings (local, via fastembed / ONNX — Groq has no embeddings API) ---
     embedding_model: str = "BAAI/bge-small-en-v1.5"
 

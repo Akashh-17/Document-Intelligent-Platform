@@ -1,5 +1,14 @@
 import { useState } from "react";
-import { Bot, User, ThumbsUp, ThumbsDown, ShieldCheck, ShieldAlert, Info } from "lucide-react";
+import {
+  Bot,
+  User,
+  ThumbsUp,
+  ThumbsDown,
+  ShieldCheck,
+  ShieldAlert,
+  ShieldX,
+  Info,
+} from "lucide-react";
 import type { NoAnswer, Verification } from "@/lib/events";
 import { NoAnswerCard } from "./NoAnswerCard";
 import { cn } from "@/lib/utils";
@@ -126,6 +135,7 @@ export function MessageBubble({
   runId,
   verification,
   noAnswer,
+  blocked,
 }: {
   role: "user" | "assistant";
   content: string;
@@ -133,6 +143,7 @@ export function MessageBubble({
   runId?: string;
   verification?: Verification;
   noAnswer?: NoAnswer;
+  blocked?: "prompt_injection" | "policy";
 }) {
   const isUser = role === "user";
   return (
@@ -156,6 +167,16 @@ export function MessageBubble({
             <p className="whitespace-pre-wrap text-sm">{content}</p>
           ) : noAnswer ? (
             <NoAnswerCard data={noAnswer} />
+          ) : blocked ? (
+            <div className="flex items-start gap-2 text-sm">
+              <ShieldX className="mt-0.5 h-4 w-4 shrink-0 text-danger" />
+              <div>
+                <p className="font-semibold">
+                  {blocked === "prompt_injection" ? "Request blocked by guardrails" : "Request declined"}
+                </p>
+                <p className="mt-1 text-muted">{content}</p>
+              </div>
+            </div>
           ) : (
             <>
               <Markdown text={content} highlight={!streaming} />
@@ -165,10 +186,12 @@ export function MessageBubble({
             </>
           )}
         </div>
-        {!isUser && !streaming && verification && !noAnswer && <Caveats v={verification} />}
+        {!isUser && !streaming && verification && !noAnswer && !blocked && (
+          <Caveats v={verification} />
+        )}
         {!isUser && !streaming && (verification || runId) && (
           <div className="flex items-center gap-3">
-            {verification && !noAnswer && <ConfidenceBadge v={verification} />}
+            {verification && !noAnswer && !blocked && <ConfidenceBadge v={verification} />}
             {runId && <Feedback runId={runId} />}
           </div>
         )}
