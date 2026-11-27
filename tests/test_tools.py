@@ -40,7 +40,7 @@ def config():
 
 def test_there_are_twelve_uniquely_named_tools():
     names = [t.name for t in ALL_TOOLS]
-    assert len(names) == 12 and len(set(names)) == 12
+    assert len(names) == 13 and len(set(names)) == 13
 
 
 # --- calculator ------------------------------------------------------------------

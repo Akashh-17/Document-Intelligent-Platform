@@ -54,6 +54,19 @@ class Settings(BaseSettings):
     web_query_privacy: bool = True
     private_terms: str = ""  # extra comma-separated names to never send to web search
 
+    # --- web search pipeline (see rag_agent/websearch.py) ---
+    # Keyless engines queried in parallel (hedged); the first answers win. ddgs
+    # backends plus "wikipedia" (its own search API: the reliable last resort).
+    # ("auto" is left out: it re-queries the same engines and usually times out.)
+    # A free Tavily key (TAVILY_API_KEY) is tried first when set.
+    web_engines: str = "yahoo,startpage,duckduckgo,brave,mojeek,wikipedia"
+    web_search_deadline_s: float = 8.0  # give up on engines after this long
+    web_read_deadline_s: float = 4.0  # time allowed for reading the top pages
+    web_max_results: int = 5  # results kept after re-ranking
+    web_deep_read: int = 2  # top results read in full (0 = snippets only)
+    web_min_score: float = 0.05  # cross-encoder relevance gate for results/passages
+    web_cache_ttl_s: int = 900  # identical searches within 15 min are served from cache
+
     # --- failure handling (Phase 3) ---
     model_fallback: bool = True  # on model failure, retry on the other tier
     turn_timeout_s: float = 180.0  # hard deadline for one chat turn
@@ -62,6 +75,9 @@ class Settings(BaseSettings):
     answer_without_evidence: bool = False
     near_miss_count: int = 3  # "closest passages" shown when nothing was relevant
     evidence_char_budget: int = 9000  # evidence text given to the writer (~2.3K tokens)
+    # "List all…" / "explain this document": one passage per page, in order. A larger
+    # budget than a normal search because the answer is spread over the whole file.
+    whole_document_char_budget: int = 9500
 
     # --- guardrails (Phase 4) ---
     guardrails_enabled: bool = True
@@ -84,6 +100,7 @@ class Settings(BaseSettings):
     chunk_size: int = 700
     chunk_overlap: int = 100
     sample_docs_dir: str = "./data/sample_docs"
+    uploads_dir: str = "./data/uploads"  # original files, for the document viewer
     # Index the sample Aurora docs on startup. Turn off to start with an empty
     # library and upload your own documents.
     seed_sample_docs: bool = True

@@ -23,7 +23,13 @@ from langchain_core.runnables import RunnableConfig
 
 from rag_agent.agents import events
 from rag_agent.agents.planner import _history
-from rag_agent.agents.prompts import WRITER, WRITER_DIRECT, WRITER_UNGROUNDED
+from rag_agent.agents.prompts import (
+    WRITER,
+    WRITER_DIRECT,
+    WRITER_REWORK,
+    WRITER_UNGROUNDED,
+    with_date,
+)
 from rag_agent.agents.state import ResearchState
 from rag_agent.citations import CitationRegistry, registry_from_config
 from rag_agent.config import settings
@@ -31,6 +37,7 @@ from rag_agent.llms import with_fallback
 from rag_agent.retrieval.bm25 import tokenize
 from rag_agent.tools import WEB_TOOLS, check_groundedness, verify_citations
 from rag_agent.tools.common import emit
+from rag_agent.vectorstore import list_sources
 
 log = logging.getLogger(__name__)
 
@@ -40,7 +47,11 @@ WEB_TOOL_NAMES = {t.name for t in WEB_TOOLS}
 
 def build_evidence(registry: CitationRegistry, budget: int | None = None) -> str:
     """Numbered evidence for the writer and the judge (identical text for both)."""
-    budget = budget or settings.evidence_char_budget
+    if budget is None:
+        budget = settings.evidence_char_budget
+        if any(a["tool"] == "read_whole_document" for a in registry.attempts):
+            # the page-by-page read must reach the writer whole, or lists come out short
+            budget = max(budget, settings.whole_document_char_budget + 2000)
     parts, used = [], 0
     for s in registry.sources:
         body = registry.text(s["index"])[:PER_SOURCE_CHARS]
@@ -170,12 +181,27 @@ def compose_node(state: ResearchState, config: RunnableConfig) -> dict:
 
     if route == "direct" or ungrounded:
         system = WRITER_DIRECT if route == "direct" else WRITER_UNGROUNDED
+        library = ", ".join(list_sources()[:12]) or "empty (nothing uploaded yet)"
         messages = [
-            SystemMessage(system),
+            SystemMessage(with_date(system)),
             HumanMessage(
+                f"The user's document library: {library}\n\n"
                 f"Conversation so far:\n{_history(state)}\n\nUser: {state.get('question', '')}"
             ),
         ]
+    elif route == "rework":
+        last = state.get("last_answer") or {}
+        prompt = (
+            f"YOUR PREVIOUS ANSWER (to: {last.get('question', '')}):\n{last.get('answer', '')}\n\n"
+            f"WHAT THE USER WANTS NOW: {state.get('question', '')}\n\n"
+            f"EVIDENCE BEHIND IT (same numbering):\n{build_evidence(registry)}"
+        )
+        if revision:
+            prompt += (
+                f"\n\nYOUR PREVIOUS DRAFT:\n{state.get('answer', '')}\n\n"
+                f"FACT-CHECK FEEDBACK — fix these problems:\n{state.get('feedback', '')}"
+            )
+        messages = [SystemMessage(with_date(WRITER_REWORK)), HumanMessage(prompt)]
     else:
         prompt = (
             f"QUESTION: {state.get('question', '')}\n\n"
@@ -189,7 +215,7 @@ def compose_node(state: ResearchState, config: RunnableConfig) -> dict:
                 f"{state.get('answer', '')}\n\n"
                 f"FACT-CHECK FEEDBACK — fix these problems:\n{state.get('feedback', '')}"
             )
-        messages = [SystemMessage(WRITER), HumanMessage(prompt)]
+        messages = [SystemMessage(with_date(WRITER)), HumanMessage(prompt)]
 
     try:
         # primary writer model, then the other tier if it fails (rate limit, 5xx)
@@ -200,7 +226,7 @@ def compose_node(state: ResearchState, config: RunnableConfig) -> dict:
             emit({"kind": "replace_answer", "text": answer})
         return {"answer": answer, "degraded": False}
     except Exception as exc:
-        if route == "direct" or ungrounded or len(registry) == 0:
+        if route in ("direct", "rework") or ungrounded or len(registry) == 0:
             raise  # nothing to fall back on: surface a friendly error
         log.exception("all writer models failed; trying an extractive answer")
         emit({"kind": "degraded", "reason": f"Writer unavailable ({type(exc).__name__})."})
@@ -267,6 +293,10 @@ def verify_node(state: ResearchState, config: RunnableConfig) -> dict:
     # The evidence exists but doesn't answer the question (e.g. retrieval found
     # loosely related passages). Revising can't fix missing information: give
     # the honest "couldn't find it" response instead.
+    if route == "rework":
+        # A rewrite answers "make it shorter", not the original question: judging
+        # how much of the question it covers would flag every summary as partial.
+        grounded["coverage"], grounded["missing_aspects"] = "full", []
     grounded["coverage"] = coverage_backstop(
         answer, grounded.get("coverage", "full"), citations["has_citations"]
     )

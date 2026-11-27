@@ -12,6 +12,7 @@ services:
       # Keep persisted state inside the mounted volume.
       - CHROMA_DIR=/app/state/chroma_db
       - SQLITE_PATH=/app/state/memory.sqlite
+      - UPLOADS_DIR=/app/state/uploads
       # Cache the fastembed model weights in the volume (no re-download on rebuild).
       - FASTEMBED_CACHE_PATH=/app/state/fastembed_cache
     volumes:

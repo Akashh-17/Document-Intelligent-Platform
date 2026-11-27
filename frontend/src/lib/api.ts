@@ -68,6 +68,15 @@ export interface DocumentInfo {
   title: string;
   chunks: number;
   pages?: number | null;
+  kind: "pdf" | "markdown" | "text";
+  has_file: boolean;
+  size_bytes?: number | null;
+  added_at?: string | null;
+}
+
+/** URL of a document's original file (served for the in-app viewer). */
+export function fileUrl(name: string): string {
+  return `/api/documents/${encodeURIComponent(name)}/file`;
 }
 
 export async function listDocuments(): Promise<DocumentInfo[]> {

@@ -18,14 +18,20 @@ export function useLibrary() {
     }
   }, []);
 
+  // Load once on start.
   useEffect(() => {
     refresh();
-    // The backend may still be starting (indexing sample docs): retry until it answers.
-    const timer = setInterval(() => {
-      if (offline || !health) refresh();
-    }, 4000);
+  }, [refresh]);
+
+  // The backend may still be starting: retry every 4 s, but ONLY until it answers.
+  // (Depending on `health` here used to re-run the effect after every refresh —
+  // each refresh stores a new object — which hammered the API in a tight loop.)
+  const connected = health !== null && !offline;
+  useEffect(() => {
+    if (connected) return;
+    const timer = setInterval(refresh, 4000);
     return () => clearInterval(timer);
-  }, [refresh, offline, health]);
+  }, [connected, refresh]);
 
   const remove = useCallback(
     async (name: string) => {

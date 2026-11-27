@@ -26,6 +26,8 @@ export interface ToolStep {
   status: StepStatus;
   args?: Record<string, unknown>;
   note?: { kind: NoteKind; text: string };
+  /** web_search only: what the search pipeline did. */
+  web?: { results: number; pagesRead: number; fresh: boolean; cached: boolean };
 }
 
 export interface AgentStep {
@@ -54,6 +56,8 @@ export function toolLabel(step: ToolStep): string {
       return "Reviewed your library";
     case "search_documents":
       return a.query ? `Searched for ${q(a.query)}` : "Searched your documents";
+    case "read_whole_document":
+      return `Read all of ${String(a.document ?? "the document")}, page by page`;
     case "search_within_document":
       return `Looked inside ${String(a.document ?? "a document")}`;
     case "get_adjacent_chunks":
@@ -64,8 +68,15 @@ export function toolLabel(step: ToolStep): string {
       return `Compared ${String(a.document_a ?? "")} with ${String(a.document_b ?? "")}`;
     case "calculator":
       return `Calculated ${String(a.expression ?? "")}`;
-    case "web_search":
-      return a.query ? `Searched the web for ${q(a.query)}` : "Searched the web";
+    case "web_search": {
+      const base = a.query ? `Searched the web for ${q(a.query)}` : "Searched the web";
+      const w = step.web;
+      if (!w || step.status === "running") return base;
+      const bits = [`${w.results} result${w.results === 1 ? "" : "s"}`];
+      if (w.pagesRead) bits.push(`read ${w.pagesRead} page${w.pagesRead === 1 ? "" : "s"}`);
+      if (w.fresh) bits.push("incl. news");
+      return `${base} · ${bits.join(", ")}`;
+    }
     case "fetch_webpage":
       return `Read ${hostOf(String(a.url ?? "")) || "a web page"}`;
     case "wikipedia_lookup":
@@ -84,6 +95,7 @@ const ROUTE_PLAN: Record<string, string> = {
   web: "Decided to search the web",
   both: "Decided to search your documents and the web",
   direct: "No research needed",
+  rework: "Reused the sources from the previous answer",
   decline: "Declined the request",
 };
 
@@ -99,6 +111,7 @@ export function agentLabel(step: AgentStep, plan?: PlanInfo): string {
     case "web_researcher":
       return running ? "Searching the web" : "Searched the web";
     case "verifier":
+      if (plan?.route === "rework") return running ? "Rewriting and fact-checking" : "Rewrote the answer and checked it";
       return running ? "Writing and fact-checking" : "Wrote the answer and checked it";
   }
 }

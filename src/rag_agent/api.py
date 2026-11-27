@@ -7,12 +7,15 @@ import re
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import PurePath
+from urllib.parse import quote
 
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from sse_starlette.sse import EventSourceResponse
 from starlette.concurrency import run_in_threadpool
 
+from rag_agent import files as stored_files
 from rag_agent.agent import build_agent
 from rag_agent.config import settings
 from rag_agent.guardrails import RateLimiter
@@ -26,7 +29,7 @@ from rag_agent.schemas import (
     IngestResponse,
 )
 from rag_agent.streaming import agent_event_stream
-from rag_agent.vectorstore import collection_count, delete_by_source, source_stats
+from rag_agent.vectorstore import collection_count, delete_by_source, list_sources, source_stats
 
 log = logging.getLogger("rag_agent")
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
@@ -120,7 +123,7 @@ async def ingest(files: list[UploadFile] = File(...)) -> IngestResponse:
 
     # Parsing + embedding is CPU-bound: run it in a worker thread so live chat
     # streams keep flowing while a large upload is being indexed.
-    report = await run_in_threadpool(ingest_files, payload)
+    report = await run_in_threadpool(ingest_files, payload, True)
     results = [
         IngestFileResult(
             name=r.name, chunks=r.chunks, replaced=r.replaced, error=r.error, warnings=r.warnings
@@ -162,7 +165,30 @@ async def chat_stream(req: ChatRequest, request: Request) -> EventSourceResponse
 async def list_documents() -> list[DocumentInfo]:
     """The knowledge base, one entry per uploaded file."""
     stats = await run_in_threadpool(source_stats)
-    return [DocumentInfo(**s) for s in stats]
+    return [DocumentInfo(**s, **stored_files.file_info(s["source"])) for s in stats]
+
+
+@app.get("/api/documents/{name}/file")
+async def document_file(name: str) -> FileResponse:
+    """The original file, for the in-app document viewer.
+
+    Only files that are actually in the library are served, from the upload or
+    sample directory, never an arbitrary path.
+    """
+    if name not in await run_in_threadpool(list_sources):
+        raise HTTPException(status_code=404, detail=f"No document named '{name}'.")
+    path = stored_files.path_for(name)
+    if path is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"'{name}' was indexed before originals were kept; upload it again "
+            "to preview it.",
+        )
+    return FileResponse(
+        path,
+        media_type=stored_files.media_type(name),
+        headers={"Content-Disposition": f"inline; filename*=UTF-8''{quote(name)}"},
+    )
 
 
 @app.delete("/api/documents/{name}")
@@ -171,6 +197,7 @@ async def delete_document(name: str) -> dict:
     removed = await run_in_threadpool(delete_by_source, name)
     if not removed:
         raise HTTPException(status_code=404, detail=f"No document named '{name}'.")
+    await run_in_threadpool(stored_files.remove, name)
     return {"deleted": name, "chunks_removed": removed}
 
 

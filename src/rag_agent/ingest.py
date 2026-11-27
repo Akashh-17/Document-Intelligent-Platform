@@ -18,6 +18,7 @@ from pathlib import Path
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
+from rag_agent import files as stored_files
 from rag_agent.config import settings
 from rag_agent.guardrails.sanitize import sanitize_evidence
 from rag_agent.vectorstore import add_chunks, delete_by_source, list_sources
@@ -153,13 +154,20 @@ def _injection_warnings(chunks: list[Document]) -> list[str]:
     ]
 
 
-def ingest_files(files: list[tuple[str, bytes]]) -> IngestReport:
-    """Ingest ``(display_name, raw_bytes)`` pairs. Bad files are reported, not raised."""
+def ingest_files(files: list[tuple[str, bytes]], keep_files: bool = False) -> IngestReport:
+    """Ingest ``(display_name, raw_bytes)`` pairs. Bad files are reported, not raised.
+
+    ``keep_files`` stores each successfully indexed original (uploads), so the
+    UI can show cited passages inside the real document.
+    """
     report = IngestReport()
     for name, raw in files:
         try:
             docs = load_bytes(raw, name)
-            report.files.append(index_documents(docs, name))
+            result = index_documents(docs, name)
+            report.files.append(result)
+            if keep_files and result.chunks:
+                stored_files.store(name, raw)
         except IngestError as exc:
             report.files.append(FileResult(name=name, error=str(exc)))
     return report

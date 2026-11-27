@@ -21,6 +21,7 @@ from langchain_core.runnables import RunnableConfig
 
 from rag_agent.agents import events
 from rag_agent.agents.state import ResearchState
+from rag_agent.citations import registry_from_config
 from rag_agent.config import settings
 from rag_agent.guardrails import check_injection, check_output, mask_pii
 from rag_agent.tools.common import emit
@@ -117,4 +118,39 @@ def guard_output_node(state: ResearchState, config: RunnableConfig) -> dict:
                 _guardrail(
                     "output", "redacted", f"Redacted sensitive data from the answer: {found}."
                 )
-    return {"answer": answer, "messages": [AIMessage(content=answer)]}
+    update: dict = {"answer": answer, "messages": [AIMessage(content=answer)]}
+    remembered = _remember(state, answer, config)
+    if remembered is not None:
+        update["last_answer"] = remembered
+    return update
+
+
+_RESEARCH_ROUTES = ("documents", "web", "both", "rework")
+
+
+def _remember(state: ResearchState, answer: str, config: RunnableConfig) -> dict | None:
+    """Keep a researched answer and its evidence for follow-ups ("make it shorter").
+
+    Only answers that went through research and passed the verifier qualify:
+    small talk, refusals and "couldn't find it" responses leave the previous
+    researched answer in place, so "thanks!" followed by "now as bullets"
+    still reworks the real answer.
+    """
+    route = (state.get("plan") or {}).get("route")
+    verification = state.get("verification") or {}
+    registry = registry_from_config(config)
+    if (
+        route not in _RESEARCH_ROUTES
+        or state.get("blocked")
+        or not answer
+        or not len(registry)
+        or verification.get("confidence") in (None, "none", "n/a")
+    ):
+        return None
+    last = state.get("last_answer") or {}
+    return {
+        # a rework answers the same underlying question as the answer it reshaped
+        "question": last.get("question") if route == "rework" else state.get("question", ""),
+        "answer": answer,
+        "evidence": registry.export(),
+    }

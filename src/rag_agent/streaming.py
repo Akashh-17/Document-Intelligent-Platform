@@ -48,6 +48,8 @@ _CUSTOM_PASSTHROUGH = {
     "replace_answer",
     "guardrail",
     "blocked",
+    "intent",
+    "web_search",
 }
 
 

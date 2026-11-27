@@ -3,7 +3,8 @@ import { ChevronDown, ExternalLink } from "lucide-react";
 import type { Source } from "@/lib/events";
 import { bestWindow, type ShownSource } from "@/lib/citations";
 import { cn } from "@/lib/utils";
-import { Marked, SourceIcon, sourceMeta } from "./Evidence";
+import { useViewer } from "@/components/viewer/ViewerContext";
+import { Marked, SourceIcon, sourceMeta, viewerTarget } from "./Evidence";
 
 /**
  * The sources an answer actually cites, numbered in reading order. Selecting a
@@ -13,6 +14,7 @@ import { Marked, SourceIcon, sourceMeta } from "./Evidence";
 export function Sources({ cited, others, terms }: { cited: ShownSource[]; others: Source[]; terms: string[] }) {
   const [openN, setOpenN] = useState<number | null>(null);
   const [showOthers, setShowOthers] = useState(false);
+  const viewer = useViewer();
   if (!cited.length && !others.length) return null;
   const opened = cited.find((s) => s.n === openN);
 
@@ -24,12 +26,17 @@ export function Sources({ cited, others, terms }: { cited: ShownSource[]; others
           <div className="flex flex-wrap gap-2">
             {cited.map((s) => {
               const { name, detail } = sourceMeta(s);
-              const active = s.n === openN;
+              const target = viewerTarget(s);
+              const inViewer =
+                target !== null && viewer.target?.document === target.document && viewer.target?.n === s.n;
+              const active = s.n === openN || inViewer;
               return (
                 <button
                   key={s.index}
-                  onClick={() => setOpenN(active ? null : s.n)}
-                  aria-expanded={active}
+                  // documents open beside the chat, at the cited page; web sources expand inline
+                  onClick={() => (target ? viewer.open(target) : setOpenN(active ? null : s.n))}
+                  aria-expanded={target ? undefined : active}
+                  title={target ? "Show this passage in the document" : undefined}
                   className={cn(
                     "flex max-w-[15rem] items-center gap-2 rounded-xl border px-2.5 py-1.5 text-left transition-colors",
                     active ? "border-accent bg-accent-soft" : "border-border bg-surface hover:border-faint",

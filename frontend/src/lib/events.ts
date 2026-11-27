@@ -13,6 +13,13 @@ export interface Source {
   url?: string | null;
   snippet: string;
   score?: number | null;
+  /** Document sources: the file and PDF page the passage comes from. */
+  document?: string;
+  page?: number | null;
+  /** Web results: publication date (news), and whether the page was read in full. */
+  date?: string | null;
+  read?: boolean;
+  engines?: string[];
   /** Set when the retrieval guardrail removed instruction-like text. */
   guardrail?: string;
   /** Hybrid-retrieval signals (document sources only). */
@@ -25,7 +32,7 @@ export interface Source {
   };
 }
 
-export type Route = "documents" | "web" | "both" | "direct" | "decline" | "blocked";
+export type Route = "documents" | "web" | "both" | "direct" | "rework" | "decline" | "blocked";
 
 export interface PlanInfo {
   route: Route;
@@ -107,5 +114,15 @@ export type AgentEvent =
       sent?: string; // …and as it was actually sent
     } & T)
   | ({ type: "blocked"; category: "prompt_injection" | "policy"; message: string; reasons: string[] } & T)
+  | ({ type: "intent"; intent: "chat" | "rework" | "task"; method: string; score: number; nearest?: string } & T)
+  | ({
+      type: "web_search";
+      query: string;
+      engines: string[];
+      results: number;
+      pages_read: number;
+      fresh: boolean;
+      cached: boolean;
+    } & T)
   | ({ type: "error"; message: string; fatal?: boolean; retryable?: boolean } & T)
   | ({ type: "end"; run_id?: string } & T);

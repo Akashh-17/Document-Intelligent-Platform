@@ -11,7 +11,7 @@ interview. Read it with the code open; file references are clickable on GitHub.
 3. [Models and configuration](#3-models-and-configuration)
 4. [Ingestion and storage](#4-ingestion-and-storage)
 5. [Hybrid retrieval](#5-hybrid-retrieval)
-6. [The 12 tools](#6-the-12-tools)
+6. [The 13 tools](#6-the-13-tools)
 7. [The four agents and the graph](#7-the-four-agents-and-the-graph)
 8. [Failure handling](#8-failure-handling)
 9. [Guardrails](#9-guardrails)
@@ -54,19 +54,24 @@ A user uploads documents and asks questions. The system must:
 
 Take *"What is mTLS, and how does Aurora use it?"*:
 
-1. **UI** — `useAgentStream.send()` POSTs to `/api/chat/stream` and reads the SSE
-   stream ([frontend/src/hooks/useAgentStream.ts](frontend/src/hooks/useAgentStream.ts)).
+1. **UI** — `useChat().send()` POSTs to `/api/chat/stream` and reads the SSE
+   stream ([frontend/src/hooks/useChat.ts](frontend/src/hooks/useChat.ts)).
 2. **API** — rate-limit check, then `agent_event_stream()` starts the graph with a
    fresh config: thread id (memory), run id (LangSmith), and a new
    **`CitationRegistry`** ([src/rag_agent/api.py](src/rag_agent/api.py), [agent.py](src/rag_agent/agent.py)).
 3. **guard_input** — masks PII in the message (the masked text *replaces* it in
    history), runs injection heuristics + Prompt Guard. Blocked → skip to step 9.
-4. **Query Planner** — calls `list_documents` to see what's indexed, then one
+4. **Intent router** — no LLM: is this small talk ("hey wassup") or a rewrite of
+   the last answer ("make it shorter")? Those skip research entirely. This is a
+   real question, so it goes on to the planner.
+   **Query Planner** — calls `list_documents` to see what's indexed, then one
    structured LLM call returns a `Plan`: standalone question (resolves "it" from
    earlier turns), route = `both`, doc queries, web queries.
 5. **Document Analyst ‖ Web Researcher** — run **in parallel** as ReAct agents.
    The analyst calls `search_documents("mTLS Aurora")` (hybrid search); the
-   researcher calls `wikipedia_lookup("mutual TLS")`. Every result passes the
+   researcher's node first runs an **anchor** `web_search` with the planner's
+   public query (several engines in parallel, re-ranked, top pages read), then
+   its model decides whether more is needed (e.g. `wikipedia_lookup("mutual TLS")`). Every result passes the
    retrieval guardrail and is registered with a turn-wide citation number.
 6. **assess** — the join point: was any evidence found? None → **no_answer**.
 7. **Fact Verifier · compose** — the heavy model writes the answer from the
@@ -155,7 +160,7 @@ query ─┬─> dense: Chroma + BGE (top 20) ─┐
   The gate is a cheap recall-oriented pre-filter; the Fact Verifier makes the
   final "does this answer the question?" call.
 
-## 6. The 12 tools
+## 6. The 13 tools
 
 **[tools/](src/rag_agent/tools/)** — every tool registers evidence in the turn's
 `CitationRegistry` and streams it to the Sources panel.
@@ -164,16 +169,61 @@ query ─┬─> dense: Chroma + BGE (top 20) ─┐
 |---|---|
 | `list_documents` | inventory for routing decisions |
 | `search_documents` | hybrid search; returns passages labelled `[n]` |
+| `read_whole_document` | for questions about ALL of a document (see below) |
 | `search_within_document` | lenient name matching: "the error codes doc" resolves to the file |
 | `get_adjacent_chunks` | uses `chunk_index` to read text around a cut-off passage |
 | `summarize_document` | LLM summary, registered as citable evidence |
 | `compare_documents` | evidence from two documents on one aspect |
 | `calculator` | **never `eval` LLM text** — walks the Python AST, allows only arithmetic |
-| `web_search` | Tavily if keyed, else DuckDuckGo; failures return a status, not an exception |
+| `web_search` | a small search pipeline (next section); failures return a status, not an exception |
 | `fetch_webpage` | **SSRF guard**: blocks localhost/private/metadata IPs and non-http, re-checks redirects |
 | `wikipedia_lookup` | definitions; no key needed |
 | `verify_citations` | deterministic: invented numbers, uncited claim sentences |
 | `check_groundedness` | structured LLM verdict: grounded, score, unsupported claims, **coverage**, missing parts |
+
+### `read_whole_document` — [coverage.py](src/rag_agent/retrieval/coverage.py)
+
+Top-k search is right for "what does error X mean?" and wrong for "list all the
+projects": the items are spread over many pages, and top-4 dropped one of a
+guide's five projects in real use. Sending every chunk would exceed the token
+budget (a 13-page PDF is ~25K characters). So it selects for **coverage**: group
+chunks by page (or 12 equal slices for text files), keep each page's best passage
+(keyword shortlist → cross-encoder), fit a ~9.5K-character budget, and return them
+**in document order**. The Document Analyst runs it automatically when a question
+is about the whole document ("list…", "how many…", "explain the document"), and the
+writer's evidence budget grows for that turn so the read isn't cut off.
+
+### `web_search` in depth — [websearch.py](src/rag_agent/websearch.py)
+
+A raw search API gives ten links with 200-character snippets. Answering from
+that is how an assistant ends up citing wikiHow for "thank you". The pipeline:
+
+1. **Hedged parallel metasearch.** Yahoo, Startpage, DuckDuckGo, Brave and Mojeek
+   (via `ddgs`) plus Wikipedia's own search API are queried *at once*. The search
+   returns 1.5 s after the first general engine answers (or when two have). From
+   one IP any single engine failed 30–60% of the time in testing; hedging makes
+   that invisible ("The Tail at Scale", Dean & Barroso). Wikipedia always answers
+   first, so it's a *supplement*: it never starts the clock, or it would cut off
+   the real engines (a bug found by live testing).
+2. **Circuit breaker.** An engine that fails 3 times in a row is skipped for
+   2 minutes, then retried once (half-open).
+3. **News vertical** for time-sensitive queries ("latest", "today", a year...).
+4. **Fusion.** Results are merged with RRF (the same function as document
+   retrieval) after URL canonicalization (no `www.`, tracking params, fragments);
+   a page several engines agree on rises. Max 2 results per site; social/image
+   sites dropped.
+5. **Re-rank** snippets with the cross-encoder.
+6. **Deep read** the top 2 pages in parallel (SSRF-guarded, 4 s budget). Each page
+   is split into ~700-char passages; boilerplate is dropped by **stopword
+   density** (the jusText idea: prose is ~30–50% stopwords, menus almost none);
+   a keyword-overlap shortlist goes to the cross-encoder; the best 2 passages
+   become the evidence. The page is then judged by its best passage, not its
+   snippet — **then** the relevance gate runs (gating first threw away relevant
+   pages that had thin snippets; a unit test caught it).
+7. **TTL cache** (15 min) — follow-ups, revisions and evals don't re-spend rate limit.
+
+"Engines answered nothing" and "engines unreachable" are reported differently, so
+the no-answer card can say which happened. A Tavily key, if set, is tried first.
 
 **The citation registry** ([citations.py](src/rag_agent/citations.py)) solves a
 real bug from the original code: each tool call numbered its results from [1], so
@@ -187,6 +237,30 @@ agents. It also logs every search attempt, which the no-answer response uses.
 [state.py](src/rag_agent/agents/state.py) (`messages` is checkpointed memory;
 `findings` uses a custom reducer so parallel agents can append safely and the
 planner can reset it each turn).
+
+### Intent router — [intent.py](src/rag_agent/agents/intent.py)
+Runs before the planner model, with no LLM call. Two layers:
+1. **Lexicon**: the *whole* message is pleasantries ("hey wassup", "thanks a
+   lot!") → chat. "thanks, what is mTLS?" leaves a real question, so it doesn't match.
+2. **Semantic router**: the message is embedded with the retriever's own model
+   (bge-small, a few ms) and compared with ~60 labelled example utterances in
+   three intents — `chat`, `rework`, `task`. It must be ≥ 0.75 cosine to a
+   chat/rework example **and** beat the closest `task` example by 0.06; anything
+   ambiguous goes to the planner model. Thresholds were calibrated on held-out
+   phrasings (real small talk 0.75–0.92; the closest real question, "who are you
+   voting for", 0.72) and are pinned by tests.
+
+Why: the planner model turned "thank you" into a web search ("how to respond to
+thank you", cited from wikiHow) and searched for "hey wassup". Deterministic
+rules for the obvious cases, the model only for the ambiguous ones.
+
+**Rework route.** "make it shorter", "translate that to Hindi", "as a table":
+the exit guardrail stores the last *researched* answer and its evidence in the
+checkpointed state (`last_answer`). A rework restores that evidence into the new
+turn's registry **with the same citation numbers**, and the writer reshapes the
+answer — no search (≈3 s instead of ≈45 s), and the rewrite is still fact-checked.
+Coverage isn't judged for reworks (a summary is *meant* to say less). Small talk
+in between ("thanks!") doesn't overwrite `last_answer`.
 
 ### Query Planner — [planner.py](src/rag_agent/agents/planner.py)
 A **structured-output** step, not a ReAct loop: one call returns a validated
@@ -207,6 +281,15 @@ their own tool calls. Middleware:
   react to (internal details never leak).
 - `ToolCallLimitMiddleware` — bounded tool calls; graceful stop.
 - `ModelFallbackMiddleware` — retry on the other model tier.
+
+**Anchor search.** Before the Web Researcher's model writes any query, the node
+runs one `web_search` with the user's own words (plus the current year for
+time-sensitive questions) and hands the results to the agent. Live bug it fixes:
+asked for "the latest stable Python release", the models searched "Python 3.12
+latest stable release date" — their training-time belief — and the answer was
+"verified" but a year out of date. Models don't know today's date either, so every
+prompt now starts with it (`with_date()`), and the prompts forbid putting
+remembered versions into queries.
 
 If the agent still fails (provider down), the node runs the planned queries
 directly with no LLM, so evidence is still collected. Their output is evidence
@@ -265,6 +348,29 @@ model's memory (`ANSWER_WITHOUT_EVIDENCE=false`). Turning it on answers with a
 Two design points: checksums keep false positives low (byte counts like
 `52428800` aren't flagged as cards), and `guard_output` is the **single exit** —
 only checked answers are ever written to memory.
+
+## 10a. The document viewer
+
+Clicking a document citation opens the original file beside the chat, on the cited
+page, with the passage highlighted. How it works:
+
+1. **Originals are kept.** Uploads are stored in `data/uploads/` ([files.py](src/rag_agent/files.py))
+   and served by `GET /api/documents/{name}/file`, only for files that are in the
+   library, and with a path check so a crafted name can't read other files.
+2. **Citations carry their location.** Document evidence now includes the file name
+   and PDF page (`tools/common.py`), so the UI knows where to open.
+3. **Rendering** uses pdf.js via `react-pdf`, lazy-loaded so it doesn't slow down the
+   first page load.
+4. **Highlighting** ([locate.ts](frontend/src/lib/locate.ts)): the passage text came
+   from pypdf on the server, but the page text in the browser comes from pdf.js. The
+   two split lines, spaces and hyphens differently, so an exact search fails. Instead
+   it finds a 5-word run from the start of the passage and one from the end, and marks
+   every text fragment between them with `<mark>` in pdf.js's (invisible) text layer.
+   The highlight sits exactly on the printed words; `mix-blend-mode: multiply` makes
+   it look like highlighter ink on paper.
+
+Opening a file from the library shows the same panel with the file's details (type,
+pages, indexed passages, size, date added) and quick "Summarize" / "Key facts" questions.
 
 ## 10. Streaming to the UI
 
@@ -383,6 +489,11 @@ the embedding model → the collection name includes the model family, or delete
 
 ## 14. Design decisions and trade-offs
 
+- **Intent router before the planner model** — small talk and follow-up rewrites
+  never cost an LLM call or a search; the risk (a real question mistaken for
+  chat) is bounded by a high threshold, a margin over task examples and a length cap.
+- **Hedged keyless metasearch vs one paid API** — free and resilient, but noisier
+  and slower (~3–8 s) than a paid search API; a Tavily key is used when present.
 - **Structured routing vs a free ReAct supervisor** — cheaper, deterministic,
   testable; loses some flexibility for unusual questions.
 - **Recall-oriented retrieval gate + LLM verification** — measured that no single
@@ -416,6 +527,31 @@ ranks are comparable. RRF needs no tuning beyond k (60, from the original paper)
 It reads query and passage together, so it judges relevance far better than
 vector similarity — but it's too slow for the whole corpus, so it only re-ranks
 the top 10 fused candidates.
+
+**Q: Why doesn't "hey wassup" go to the LLM planner?**
+A small model will happily research it (we watched it search "how to respond to
+thank you"). An intent router — a word list, then embedding similarity to
+labelled examples with a confidence threshold and a margin — handles the obvious
+cases in milliseconds with no LLM cost, and passes anything ambiguous to the
+planner. It's the semantic-router pattern.
+
+**Q: How do follow-ups like "make it shorter" work?**
+The last researched answer and its evidence are checkpointed. A rework restores
+the evidence with the same citation numbers, rewrites the answer, and fact-checks
+it again — no new search, ~3 s.
+
+**Q: How do you make free web search reliable?**
+Hedged requests to several engines with a deadline, a circuit breaker for engines
+that keep failing, Wikipedia's API as a supplement, a cache, and an honest
+"web unavailable" vs "no results" distinction. Quality comes from RRF fusion,
+cross-encoder re-ranking and reading the top pages instead of trusting snippets.
+
+**Q: The model "knew" the latest Python version. What went wrong?**
+Its knowledge is frozen at training time, so its search queries asked for the
+version it remembered and found exactly that. Fixes: today's date in every
+prompt, an anchor search with the user's own words, and a rule to trust the most
+recent dated evidence over memory. Lesson: grounding fails if the *queries*
+aren't grounded too.
 
 **Q: How do you prevent hallucinations?**
 Layers: answer only from numbered evidence; deterministic citation check; LLM
@@ -465,6 +601,9 @@ classification, streaming-time redaction, async evaluation in CI.
 - Answer tokens stream before the output guardrail runs; the UI replaces the text
   with the redacted version at the end (a stream-time redactor would close this).
 - SSRF check and fetch resolve DNS separately (DNS-rebinding window).
+- Keyless search engines rate-limit busy IPs; heavy use needs a search API key.
+- The intent router's examples are English; other languages fall through to the
+  planner model (correct, just slower).
 - BM25 index and rate limiter are in-memory, per process.
 - No authentication or per-user document isolation — single-tenant demo.
 - The evaluation corpus is small and fictional; numbers are a regression

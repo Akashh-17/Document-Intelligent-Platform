@@ -16,3 +16,4 @@ os.environ["CHROMA_COLLECTION"] = "test_documents"
 os.environ["LANGSMITH_TRACING"] = "false"
 os.environ["GROQ_API_KEY"] = ""  # tests never call the real LLM
 os.environ["TAVILY_API_KEY"] = ""
+os.environ["WEB_DEEP_READ"] = "0"  # tests never fetch real pages (see test_websearch.py)

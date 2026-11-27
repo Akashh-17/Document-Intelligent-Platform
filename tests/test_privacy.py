@@ -13,13 +13,13 @@ from fakes import (
     ScriptedChatModel,
     call,
     plan,
+    stub_web,
     tool_msg,
     verdict,
 )
 from langchain_core.messages import AIMessage
 from test_agents import of, run_turn
 
-import rag_agent.tools.web as web_tools
 from rag_agent.config import settings
 from rag_agent.ingest import ensure_seeded
 from rag_agent.privacy import internal_names, scrub_query
@@ -46,7 +46,7 @@ def searched(monkeypatch):
             }
         ]
 
-    monkeypatch.setattr(web_tools, "_search_duckduckgo", fake_ddg)
+    stub_web(monkeypatch, fake_ddg)
     return sent
 
 
@@ -91,7 +91,10 @@ def _both_route_scripts(web_query: str) -> dict:
 async def test_internal_name_is_kept_out_of_web_search_when_docs_are_in_play(searched):
     model = ScriptedChatModel(scripts=_both_route_scripts("Amazon Aurora mutual TLS"))
     events = await run_turn(model, "What is mTLS, and how does Aurora use it?")
-    assert searched == ["mutual TLS"]  # neither "Aurora" nor the "Amazon" homonym left the server
+    # anchor search (planner's public query) + the agent's own, scrubbed query:
+    # neither "Aurora" nor the "Amazon" homonym ever left the server
+    assert searched == ["what is mutual TLS", "mutual TLS"]
+    assert not any("aurora" in s.lower() or "amazon" in s.lower() for s in searched)
     notes = [d for d in of(events, "guardrail") if d["action"] == "private"]
     assert notes and "Aurora" in notes[0]["detail"]
     web_task = next(msgs for key, msgs in model.calls if key == WEB)[-1].text
@@ -109,11 +112,12 @@ async def test_pure_web_question_is_not_scrubbed(searched):
         }
     )
     await run_turn(model, q)
-    assert searched == ["Aurora borealis"]  # the user meant the public thing
+    # the user meant the public thing: nothing is scrubbed (anchor + agent query)
+    assert searched == [q, "Aurora borealis"]
 
 
 async def test_privacy_can_be_turned_off(searched, monkeypatch):
     monkeypatch.setattr(settings, "web_query_privacy", False)
     model = ScriptedChatModel(scripts=_both_route_scripts("Aurora mutual TLS"))
     await run_turn(model, "What is mTLS, and how does Aurora use it?")
-    assert searched == ["Aurora mutual TLS"]
+    assert searched == ["what is mutual TLS", "Aurora mutual TLS"]

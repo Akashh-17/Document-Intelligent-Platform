@@ -1,8 +1,8 @@
-"""The platform's 12 tools, grouped by the agent that owns them.
+"""The platform's 13 tools, grouped by the agent that owns them.
 
 Query Planner     list_documents
-Document Analyst  search_documents, search_within_document, get_adjacent_chunks,
-                  summarize_document, compare_documents, calculator
+Document Analyst  search_documents, read_whole_document, search_within_document,
+                  get_adjacent_chunks, summarize_document, compare_documents, calculator
                   (+ list_documents, shared)
 Web Researcher    web_search, fetch_webpage, wikipedia_lookup
 Fact Verifier     verify_citations, check_groundedness
@@ -14,6 +14,7 @@ from rag_agent.tools.documents import (
     compare_documents,
     get_adjacent_chunks,
     list_documents,
+    read_whole_document,
     search_documents,
     search_within_document,
     summarize_document,
@@ -38,6 +39,7 @@ __all__ = [
     "fetch_webpage",
     "get_adjacent_chunks",
     "list_documents",
+    "read_whole_document",
     "search_documents",
     "search_within_document",
     "summarize_document",

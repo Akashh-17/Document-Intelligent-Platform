@@ -16,6 +16,7 @@ function summary(m: ChatMessage): string {
   if (m.blocked === "prompt_injection") return "Stopped by safety checks";
   if (m.blocked === "policy") return "Declined";
   if (m.plan?.route === "direct") return t ? `Answered directly · ${t}` : "Answered directly";
+  if (m.plan?.route === "rework") return ["Reworked the previous answer", t].filter(Boolean).join(" · ");
   if (m.noAnswer) return `Searched · nothing reliable found${t ? ` · ${t}` : ""}`;
   return [`Researched ${n} source${n === 1 ? "" : "s"}`, t].filter(Boolean).join(" · ");
 }
@@ -90,6 +91,10 @@ export function ResearchTrace({ message }: { message: ChatMessage }) {
   }
 
   if (!agents.length) return null;
+  // Small talk reads like a normal chat reply: no trace unless a safety check
+  // did something worth showing (e.g. masked personal data).
+  const hasNotes = agents.some((a) => a.tools.some((t) => t.tool === "note"));
+  if (message.plan?.route === "direct" && !hasNotes && !message.error) return null;
 
   return (
     <div className="mb-3">

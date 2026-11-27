@@ -35,6 +35,10 @@ class DocumentInfo(BaseModel):
     title: str
     chunks: int
     pages: int | None = None
+    kind: str = "text"  # pdf | markdown | text
+    has_file: bool = False  # the original is stored, so it can be previewed
+    size_bytes: int | None = None
+    added_at: str | None = None  # ISO timestamp
 
 
 class HealthResponse(BaseModel):

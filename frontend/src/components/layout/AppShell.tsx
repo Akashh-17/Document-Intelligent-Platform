@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Menu, SquarePen } from "lucide-react";
 import { useChat } from "@/hooks/useChat";
 import { useLibrary } from "@/hooks/useLibrary";
@@ -7,6 +7,8 @@ import { EmptyState } from "@/components/chat/EmptyState";
 import { Thread } from "@/components/chat/Thread";
 import { DropOverlay, UploadDialog, useWindowDrop } from "@/components/upload/UploadDialog";
 import { useUploader } from "@/components/upload/useUploader";
+import { DocumentPanel, DocumentPanelFrame } from "@/components/viewer/DocumentPanel";
+import { ViewerContext, type ViewerTarget } from "@/components/viewer/ViewerContext";
 import { cn } from "@/lib/utils";
 import { LogoMark } from "./Logo";
 import { Sidebar } from "./Sidebar";
@@ -17,7 +19,10 @@ export function AppShell() {
   const { busy, upload } = useUploader(library.refresh);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [drawer, setDrawer] = useState(false);
+  const [viewing, setViewing] = useState<ViewerTarget | null>(null);
   const composerRef = useRef<ComposerHandle>(null);
+  const viewer = useMemo(() => ({ target: viewing, open: setViewing }), [viewing]);
+  const closeViewer = useCallback(() => setViewing(null), []);
 
   const dropFiles = useCallback((files: File[]) => void upload(files), [upload]);
   const dragging = useWindowDrop(dropFiles, !uploadOpen);
@@ -65,6 +70,11 @@ export function AppShell() {
         closeDrawer();
       }}
       onDeleteChat={chat.removeChat}
+      activeDocument={viewing?.document}
+      onOpenDocument={(name) => {
+        setViewing({ document: name });
+        closeDrawer();
+      }}
       onUpload={() => {
         setUploadOpen(true);
         closeDrawer();
@@ -74,6 +84,7 @@ export function AppShell() {
   );
 
   return (
+    <ViewerContext.Provider value={viewer}>
     <div className="flex h-full">
       {/* desktop sidebar */}
       <div className="hidden md:block">{sidebar}</div>
@@ -146,8 +157,23 @@ export function AppShell() {
         )}
       </main>
 
+      <DocumentPanelFrame open={viewing !== null} onClose={closeViewer}>
+        {viewing && (
+          <DocumentPanel
+            target={viewing}
+            doc={library.docs?.find((d) => d.source === viewing.document)}
+            onClose={closeViewer}
+            onAsk={(q) => {
+              chat.send(q);
+              if (window.matchMedia("(max-width: 1279px)").matches) closeViewer(); // sheet covers the chat
+            }}
+          />
+        )}
+      </DocumentPanelFrame>
+
       <UploadDialog open={uploadOpen} busy={busy} onClose={() => setUploadOpen(false)} onUpload={upload} />
       <DropOverlay active={dragging} />
     </div>
+    </ViewerContext.Provider>
   );
 }

@@ -1,11 +1,10 @@
 import { useState } from "react";
-import { FileText, Loader2, MessageSquare, Plus, Trash2, Upload, X } from "lucide-react";
+import { Loader2, MessageSquare, Plus, Trash2, Upload, X } from "lucide-react";
 import type { DocumentInfo } from "@/lib/api";
 import type { ChatMeta } from "@/lib/chats";
 import type { Library } from "@/hooks/useLibrary";
 import { cn } from "@/lib/utils";
 import { Wordmark } from "./Logo";
-import { ThemeToggle } from "./ThemeToggle";
 
 const REPO_URL = "https://github.com/Akashh-17/Document-Intelligent-Platform";
 
@@ -26,26 +25,51 @@ function GithubMark({ className }: { className?: string }) {
   );
 }
 
-function DocumentRow({ doc, onRemove }: { doc: DocumentInfo; onRemove: () => Promise<void> }) {
+const KIND_TAG = { pdf: "PDF", markdown: "MD", text: "TXT" } as const;
+
+function DocumentRow({
+  doc,
+  active,
+  onOpen,
+  onRemove,
+}: {
+  doc: DocumentInfo;
+  active: boolean;
+  onOpen: () => void;
+  onRemove: () => Promise<void>;
+}) {
   const [confirming, setConfirming] = useState(false);
   const [removing, setRemoving] = useState(false);
   return (
     <li className="group relative">
-      <div className="flex items-center gap-2.5 rounded-lg px-3 py-1.5 text-sm text-muted hover:bg-surface-2 hover:text-fg">
-        <FileText className="h-4 w-4 shrink-0 text-faint" />
-        <span className="min-w-0 flex-1 truncate font-mono text-[12.5px]" title={doc.title || doc.source}>
-          {doc.source}
-        </span>
-        {!confirming && (
-          <button
-            onClick={() => setConfirming(true)}
-            aria-label={`Remove ${doc.source}`}
-            className="rounded p-0.5 text-faint opacity-0 hover:text-danger focus:opacity-100 group-hover:opacity-100"
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-          </button>
+      <button
+        onClick={onOpen}
+        aria-current={active || undefined}
+        title={doc.title && doc.title !== doc.source ? `${doc.source} — ${doc.title}` : doc.source}
+        className={cn(
+          "flex w-full items-center gap-2.5 rounded-lg px-3 py-1.5 pr-8 text-left text-sm transition-colors",
+          active ? "bg-surface-2 text-fg" : "text-muted hover:bg-surface-2 hover:text-fg",
         )}
-      </div>
+      >
+        <span
+          className={cn(
+            "w-[30px] shrink-0 rounded-[4px] border py-px text-center font-mono text-[9px] font-medium tracking-wider",
+            active ? "border-accent/40 text-accent" : "border-border text-faint",
+          )}
+        >
+          {KIND_TAG[doc.kind] ?? "TXT"}
+        </span>
+        <span className="min-w-0 flex-1 truncate text-[13px]">{doc.source}</span>
+      </button>
+      {!confirming && (
+        <button
+          onClick={() => setConfirming(true)}
+          aria-label={`Remove ${doc.source}`}
+          className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-faint opacity-0 hover:text-danger focus:opacity-100 group-hover:opacity-100"
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+        </button>
+      )}
       {confirming && (
         <div className="fade mx-2 mb-1 flex items-center justify-between gap-2 rounded-lg bg-surface-2 px-3 py-1.5 text-xs">
           <span className="text-muted">Remove from library?</span>
@@ -88,6 +112,8 @@ export function Sidebar({
   onDeleteChat,
   onUpload,
   onClose,
+  activeDocument,
+  onOpenDocument,
 }: {
   chats: ChatMeta[];
   activeChatId: string;
@@ -97,6 +123,8 @@ export function Sidebar({
   onDeleteChat: (id: string) => void;
   onUpload: () => void;
   onClose?: () => void;
+  activeDocument?: string;
+  onOpenDocument: (name: string) => void;
 }) {
   const { docs, health, offline } = library;
   const modelReady = health?.llm_configured;
@@ -178,7 +206,13 @@ export function Sidebar({
         ) : (
           <ul>
             {docs.map((d) => (
-              <DocumentRow key={d.source} doc={d} onRemove={() => library.remove(d.source)} />
+              <DocumentRow
+                key={d.source}
+                doc={d}
+                active={d.source === activeDocument}
+                onOpen={() => onOpenDocument(d.source)}
+                onRemove={() => library.remove(d.source)}
+              />
             ))}
           </ul>
         )}
@@ -214,7 +248,6 @@ export function Sidebar({
         >
           <GithubMark className="h-4 w-4" />
         </a>
-        <ThemeToggle />
       </div>
     </aside>
   );

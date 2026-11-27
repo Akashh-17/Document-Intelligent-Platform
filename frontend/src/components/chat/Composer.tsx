@@ -44,8 +44,8 @@ export const Composer = forwardRef<
   return (
     <div
       className={cn(
-        "rounded-[26px] border border-border bg-surface shadow-[0_1px_2px_rgba(0,0,0,0.04),0_8px_24px_-12px_rgba(0,0,0,0.18)] transition-shadow",
-        "focus-within:border-faint focus-within:shadow-[0_1px_2px_rgba(0,0,0,0.04),0_12px_32px_-12px_rgba(0,0,0,0.28)]",
+        "rounded-[24px] border border-border bg-surface shadow-[inset_0_1px_0_rgba(255,255,255,0.035)] transition-colors",
+        "focus-within:border-zinc-700",
       )}
     >
       <label htmlFor="composer" className="sr-only">
@@ -93,7 +93,7 @@ export const Composer = forwardRef<
             disabled={!value.trim() || disabled}
             aria-label="Send"
             title="Send (Enter)"
-            className="flex h-9 w-9 items-center justify-center rounded-full bg-accent text-accent-fg transition-all hover:scale-105 disabled:scale-100 disabled:bg-surface-2 disabled:text-faint"
+            className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-indigo-500 text-white transition-all hover:brightness-110 disabled:from-surface-2 disabled:to-surface-2 disabled:text-faint"
           >
             <ArrowUp className="h-4 w-4" strokeWidth={2.5} />
           </button>

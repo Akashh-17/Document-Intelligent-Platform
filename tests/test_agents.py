@@ -19,13 +19,13 @@ from fakes import (
     ScriptedChatModel,
     call,
     plan,
+    stub_web,
     tool_msg,
     verdict,
 )
 from langchain_core.messages import AIMessage
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
-import rag_agent.tools.web as web_tools
 from rag_agent.agent import build_agent
 from rag_agent.ingest import ensure_seeded
 from rag_agent.llms import override_models
@@ -41,9 +41,8 @@ def _seed():
 
 @pytest.fixture(autouse=True)
 def _fake_web(monkeypatch):
-    monkeypatch.setattr(
-        web_tools,
-        "_search_duckduckgo",
+    stub_web(
+        monkeypatch,
         lambda q: [
             {
                 "title": "Mutual TLS - overview",

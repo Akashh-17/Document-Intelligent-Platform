@@ -67,6 +67,21 @@ class CitationRegistry:
         with self._lock:
             return [s["index"] for s in self.sources]
 
+    def export(self) -> list[dict[str, Any]]:
+        """Everything needed to rebuild this registry with the same numbers later
+        (a follow-up like "make it shorter" reuses the previous turn's evidence)."""
+        with self._lock:
+            keys = {i: k for k, i in self._by_key.items()}
+            return [
+                {
+                    "key": keys[s["index"]],
+                    "source": {k: v for k, v in s.items() if k not in ("index", "id")},
+                    "text": self._texts.get(s["index"]),
+                    "ref": self._refs.get(s["index"]),
+                }
+                for s in self.sources
+            ]
+
     def __len__(self) -> int:
         return len(self.sources)
 

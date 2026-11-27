@@ -163,6 +163,18 @@ function applyEvent(m: ChatMessage, e: AgentEvent): ChatMessage {
             : "guardrails";
       return { ...m, agents: addNote(scrubbed, target, noteFromGuardrail(e.action, e.detail)) };
     }
+    case "web_search":
+      // Attach what the search pipeline did to the matching tool call in the trace.
+      return {
+        ...m,
+        agents: agents.map((ag) => {
+          let i = ag.tools.length - 1;
+          while (i >= 0 && !(ag.tools[i].tool === "web_search" && !ag.tools[i].web)) i--;
+          if (i === -1) return ag;
+          const web = { results: e.results, pagesRead: e.pages_read, fresh: e.fresh, cached: e.cached };
+          return { ...ag, tools: ag.tools.map((t, j) => (j === i ? { ...t, web } : t)) };
+        }),
+      };
     case "verification": {
       const { type: _t, thread_id: _id, ...verification } = e;
       return { ...m, verification };

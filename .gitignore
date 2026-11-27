@@ -14,6 +14,7 @@ build/
 
 # data / runtime artifacts
 chroma_db/
+data/uploads/
 *.sqlite
 *.sqlite-shm
 *.sqlite-wal

@@ -25,6 +25,7 @@ from rag_agent.citations import registry_from_config
 from rag_agent.guardrails.sanitize import sanitize_evidence
 from rag_agent.llms import with_fallback
 from rag_agent.retrieval import RetrievedChunk, hybrid_search
+from rag_agent.retrieval.coverage import coverage_passages
 from rag_agent.tools.common import (
     SNIPPET_CHARS,
     emit_sources,
@@ -143,6 +144,7 @@ def summarize_document(document: str, config: RunnableConfig) -> str:
         source={
             "kind": "document",
             "title": f"{source} (summary)",
+            "document": source,  # opens the document (no passage to highlight)
             "snippet": summary[:SNIPPET_CHARS],
             "score": None,
         },
@@ -244,8 +246,30 @@ def calculator(expression: str) -> str:
     return f"{expression} = {result}"
 
 
+@tool
+@logs_attempt("document")
+def read_whole_document(document: str, question: str, config: RunnableConfig) -> str:
+    """Read ALL of one document, for questions about the whole of it: "list all the
+    projects", "how many sections are there", "explain/summarize this document".
+
+    Returns the most relevant passage from every page, in document order, labelled
+    [n] (search tools return only the top few passages and miss list items).
+    """
+    source = resolve_source(document)
+    if source is None:
+        return unknown_source_message(document)
+    hits = coverage_passages(source, question)
+    if not hits:
+        return f"NO_RELEVANT_DOCUMENTS: {source} has no indexed text."
+    pages = sorted({h.metadata.get("page") for h in hits if h.metadata.get("page")})
+    where = f"pages {pages[0]}–{pages[-1]}" if len(pages) > 1 else "the whole document"
+    header = f"Read {source}: {len(hits)} passages covering {where}, in order.\n\n"
+    return header + _evidence_result("read_whole_document", hits, config)
+
+
 DOCUMENT_TOOLS = [
     search_documents,
+    read_whole_document,
     search_within_document,
     get_adjacent_chunks,
     summarize_document,

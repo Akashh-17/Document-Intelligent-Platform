@@ -17,7 +17,7 @@ export function Wordmark() {
   return (
     <span className="flex items-center gap-2">
       <LogoMark />
-      <span className="font-display text-[1.05rem] font-semibold tracking-tight">Docintel</span>
+      <span className="text-[0.95rem] font-semibold tracking-tight">Document Intelligence</span>
     </span>
   );
 }

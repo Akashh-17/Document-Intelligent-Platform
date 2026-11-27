@@ -126,3 +126,30 @@ WRITER = "writing the final answer"
 DIRECT = "needs no research"
 JUDGE = "strict fact-checker"
 SUMMARIZER = "Summarize the document"
+
+
+def stub_web(monkeypatch, search: Callable[[str], list[dict]]) -> None:
+    """Replace the live search engines with ``search(query) -> rows``.
+
+    Rows look like ``{"title", "url", "content"}``. Returning ``[]`` means the
+    engines answered "no results"; raising means they were unreachable. The
+    rest of the pipeline (fusion, re-ranking, relevance gate) still runs.
+    """
+    from rag_agent import websearch
+
+    websearch._search_cache.clear()
+
+    def keyless(query: str, fresh: bool) -> websearch.EngineRun:
+        rows = search(query)  # may raise -> WEB_SEARCH_UNAVAILABLE
+        if not rows:
+            return websearch.EngineRun(empty=["stub"])
+        return websearch.EngineRun(
+            results={
+                "stub": [
+                    {"title": r["title"], "url": r["url"], "snippet": r.get("content", "")}
+                    for r in rows
+                ]
+            }
+        )
+
+    monkeypatch.setattr(websearch, "_search_keyless", keyless)

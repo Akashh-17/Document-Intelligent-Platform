@@ -22,6 +22,8 @@ Failure handling (agent middleware):
 from __future__ import annotations
 
 import logging
+import re
+from datetime import date
 
 from langchain.agents import create_agent
 from langchain.agents.middleware import (
@@ -34,19 +36,29 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.errors import GraphRecursionError
 
 from rag_agent.agents import events
-from rag_agent.agents.prompts import DOC_ANALYST, WEB_RESEARCHER
+from rag_agent.agents.prompts import DOC_ANALYST, WEB_RESEARCHER, with_date
 from rag_agent.agents.state import ResearchState
 from rag_agent.citations import registry_from_config
 from rag_agent.config import settings
 from rag_agent.llms import get_fallback_model, get_model
 from rag_agent.privacy import CONFIG_KEY as PRIVATE_KEY
 from rag_agent.privacy import internal_names
-from rag_agent.tools import DOCUMENT_TOOLS, WEB_TOOLS, search_documents, web_search
+from rag_agent.retrieval import hybrid_search
+from rag_agent.tools import (
+    DOCUMENT_TOOLS,
+    WEB_TOOLS,
+    read_whole_document,
+    search_documents,
+    web_search,
+)
 from rag_agent.tools.common import emit
+from rag_agent.vectorstore import list_sources
+from rag_agent.websearch import is_time_sensitive
 
 log = logging.getLogger(__name__)
 
 _EVIDENCE_KIND = {"doc_analyst": "document", "web_researcher": "web"}
+_URL = re.compile(r"https?://[^\s<>()\"']+")
 
 
 def _count(config: RunnableConfig, kind: str) -> int:
@@ -82,16 +94,98 @@ def _task(agent: str, state: ResearchState) -> str:
         else ""
     )
     if agent == "web_researcher" and state.get("gap_fill"):
-        return (
+        return with_date(
             f"Research task: {state.get('question', '')}\n"
             "The private documents already answered part of this. Find public "
             "information ONLY about: " + "; ".join(state["gap_fill"]) + keep_private
         )
     lines = [f"Research task: {state.get('question', '')}"]
     lines.append("Suggested queries: " + "; ".join(_queries(agent, state)))
-    if agent == "web_researcher" and (state.get("plan") or {}).get("route") == "documents":
-        lines.append("The private documents had nothing relevant; search the public web.")
-    return "\n".join(lines) + keep_private
+    if agent == "web_researcher":
+        if (state.get("plan") or {}).get("route") == "documents":
+            lines.append("The private documents had nothing relevant; search the public web.")
+        urls = _URL.findall(state.get("question", ""))
+        if urls:
+            lines.append(
+                "The user gave these pages; read them with fetch_webpage: " + " ".join(urls)
+            )
+    return with_date("\n".join(lines) + keep_private)
+
+
+ANCHOR_RESULT_CHARS = 3500  # first-search evidence shown to the agent (~900 tokens)
+WHOLE_DOC_RESULT_CHARS = 4000  # the agent only needs an overview; the writer gets it all
+
+# Questions about ALL of a document: lists and counts, or an overview of "the document".
+_ENUMERATE = re.compile(
+    r"\b(?:list|enumerate|how many|all (?:the|of the)|every|each of|key points|main points|"
+    r"outline|table of contents|chapters|sections)\b",
+    re.IGNORECASE,
+)
+_OVERVIEW = re.compile(
+    r"\b(?:summar\w+|overview|explain|describe|walk me through|tell me about"
+    r"|what is .{0,30}about)\b",
+    re.IGNORECASE,
+)
+_DOC_NOUN = re.compile(
+    r"\b(?:document|doc|pdf|file|report|guide|paper|book|deck|it|this)\b", re.IGNORECASE
+)
+
+
+def is_whole_document_question(question: str) -> bool:
+    return bool(_ENUMERATE.search(question)) or (
+        bool(_OVERVIEW.search(question)) and bool(_DOC_NOUN.search(question))
+    )
+
+
+def _named_source(question: str, sources: list[str]) -> str | None:
+    """A library file the question names ("the portfolio guide" -> Advanced_..._Portfolio.pdf)."""
+    words = set(re.findall(r"[a-z0-9]{4,}", question.lower()))
+    best, hits = None, 0
+    for s in sources:
+        stem = set(re.findall(r"[a-z0-9]{4,}", s.lower().rsplit(".", 1)[0])) - {"final", "draft"}
+        overlap = len(stem & words)
+        if overlap > hits:
+            best, hits = s, overlap
+    return best
+
+
+def _whole_document_target(agent: str, state: ResearchState) -> str | None:
+    """Which document to read in full, if the question is about all of one."""
+    if agent != "doc_analyst":
+        return None
+    question = state.get("question", "")
+    if not is_whole_document_question(question):
+        return None
+    sources = list_sources()
+    if not sources:
+        return None
+    if len(sources) == 1:
+        return sources[0]
+    named = _named_source(question, sources)
+    if named:
+        return named
+    hits = hybrid_search(question)  # otherwise: the document the question matches best
+    return hits[0].source if hits else None
+
+
+def _anchor_query(agent: str, state: ResearchState) -> str | None:
+    """The Web Researcher's first search: the user's question in their own words.
+
+    For a "both" question the standalone question mixes in document-specific
+    parts, so the planner's public-facing query is used instead. Gap-fill
+    searches are already narrowly targeted, so they get no anchor.
+    """
+    if agent != "web_researcher" or state.get("gap_fill"):
+        return None
+    plan = state.get("plan") or {}
+    query = (
+        (plan.get("web_queries") or [None])[0]
+        if plan.get("route") == "both"
+        else state.get("question")
+    )
+    if query and is_time_sensitive(query) and not re.search(r"\b20\d\d\b", query):
+        query = f"{query.rstrip('?. ')} {date.today().year}"  # bias engines to fresh pages
+    return query or None
 
 
 def tool_error_message(exc: Exception, request) -> str:
@@ -148,6 +242,33 @@ def make_research_node(agent: str):
         names = _private_names(agent, state)
         if names:  # enforced in the web tools too, not just asked for in the prompt
             sub_config["configurable"] = {**config.get("configurable", {}), PRIVATE_KEY: names}
+        whole = _whole_document_target(agent, state)
+        if whole:
+            # "List all the projects" / "explain this document": top-k search misses
+            # list items spread over many pages, so read the document page by page.
+            read = events.run_tool(
+                agent,
+                read_whole_document,
+                {"document": whole, "question": state.get("question", "")},
+                sub_config,
+            )
+            task += (
+                f"\n\nThe whole of {whole} was already read (best passage of every page, "
+                f"in order). Results:\n{str(read)[:WHOLE_DOC_RESULT_CHARS]}\n\n"
+                "Use these passages; search again only for something they don't cover."
+            )
+        anchor = _anchor_query(agent, state)
+        if anchor:
+            # Search the user's own wording first, deterministically. Models fill
+            # queries with what they *remember* is current ("Python 3.12 latest
+            # release") and then find exactly that; the anchor keeps the evidence
+            # tied to what was asked. It also saves the agent one LLM round.
+            first = events.run_tool(agent, web_search, {"query": anchor}, sub_config)
+            task += (
+                f"\n\nA first web search for {anchor!r} already ran. Results:\n"
+                f"{str(first)[:ANCHOR_RESULT_CHARS]}\n\n"
+                "Search again only if these don't answer the task."
+            )
         status = "ok"
         try:
             result = sub_agent.invoke({"messages": [HumanMessage(task)]}, sub_config)

@@ -1,6 +1,7 @@
 import { createContext, useContext, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { ExternalLink, FileText, Globe } from "lucide-react";
+import { ArrowUpRight, ExternalLink, FileText, Globe } from "lucide-react";
+import { useViewer, type ViewerTarget } from "@/components/viewer/ViewerContext";
 import { bestWindow, hostOf, markRuns, splitTitle, type ShownSource } from "@/lib/citations";
 import { cn } from "@/lib/utils";
 
@@ -31,16 +32,40 @@ export function SourceIcon({ source, className }: { source: { kind: string }; cl
   return <Icon className={cn("shrink-0", className)} />;
 }
 
+function formatDate(iso: string): string {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime())
+    ? ""
+    : d.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+}
+
 export function sourceMeta(s: ShownSource | { kind: string; title: string; url?: string | null }) {
   const { name, detail } = splitTitle(s.title);
-  if (s.kind === "web") return { name, detail: hostOf(s.url) || "web" };
+  if (s.kind === "web") {
+    const date = "date" in s && s.date ? formatDate(s.date) : "";
+    return { name, detail: [hostOf(s.url) || "web", date].filter(Boolean).join(" · ") };
+  }
   return { name, detail: detail ? `Your document · ${detail}` : "Your document" };
+}
+
+/** Where a document citation opens in the viewer (null for web sources). */
+export function viewerTarget(source: ShownSource): ViewerTarget | null {
+  if (source.kind !== "document" || !source.document) return null;
+  const summary = source.title.endsWith("(summary)"); // an LLM summary: nothing to highlight
+  return {
+    document: source.document,
+    page: source.page,
+    passage: summary ? undefined : source.snippet,
+    n: source.n,
+  };
 }
 
 /** The card that appears over a citation: which source, and the passage itself. */
 function EvidenceCard({ source, terms }: { source: ShownSource; terms: string[] }) {
   const { name, detail } = sourceMeta(source);
   const passage = bestWindow(source.snippet, terms, 300);
+  const { open } = useViewer();
+  const target = viewerTarget(source);
   return (
     <div className="w-[min(360px,calc(100vw-24px))] rounded-xl border border-border bg-surface p-3.5 text-left shadow-xl shadow-black/15">
       <div className="mb-2 flex items-center gap-2">
@@ -64,6 +89,15 @@ function EvidenceCard({ source, terms }: { source: ShownSource; terms: string[] 
           >
             Open <ExternalLink className="h-3 w-3" />
           </a>
+        )}
+        {target && (
+          <button
+            type="button"
+            onClick={() => open(target)}
+            className="inline-flex shrink-0 items-center gap-1 text-accent hover:underline"
+          >
+            View in document <ArrowUpRight className="h-3 w-3" />
+          </button>
         )}
       </div>
     </div>

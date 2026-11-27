@@ -2,24 +2,21 @@
 
 | Tool             | What it does                                                 |
 |------------------|--------------------------------------------------------------|
-| web_search       | Search the web (Tavily if keyed, else keyless DuckDuckGo)    |
+| web_search       | Hedged metasearch + re-rank + read top pages (websearch.py)  |
 | fetch_webpage    | Read the full text of one URL (SSRF-guarded)                 |
 | wikipedia_lookup | Encyclopedic summary of a concept, entity or term            |
 """
 
 from __future__ import annotations
 
-import ipaddress
-import re
-import socket
-from urllib.parse import quote, urljoin, urlparse
+from urllib.parse import quote
 
 import httpx
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import tool
 
+from rag_agent import websearch
 from rag_agent.citations import registry_from_config
-from rag_agent.config import settings
 from rag_agent.privacy import CONFIG_KEY as PRIVATE_KEY
 from rag_agent.privacy import scrub_query
 from rag_agent.tools.common import (
@@ -29,45 +26,21 @@ from rag_agent.tools.common import (
     logs_attempt,
     register_evidence,
 )
+from rag_agent.websearch import (  # re-exported: the SSRF guard lives with the fetcher
+    USER_AGENT,
+    BlockedURLError,
+    check_public_url,
+    fetch_url_text,
+    html_to_text,
+)
 
-USER_AGENT = "DocumentIntelligencePlatform/0.2 (educational RAG project)"
+__all__ = ["BlockedURLError", "check_public_url", "html_to_text", "WEB_TOOLS"]
+
 _TIMEOUT = httpx.Timeout(10.0, connect=5.0)
-_MAX_BYTES = 2 * 1024 * 1024
 _MAX_PAGE_CHARS = 4000
 
 
 # --- web_search -----------------------------------------------------------------
-
-
-def _search_tavily(query: str) -> list[dict]:
-    from langchain_tavily import TavilySearch
-
-    result = TavilySearch(max_results=5).invoke({"query": query})
-    results = result.get("results", []) if isinstance(result, dict) else []
-    return [
-        {
-            "title": r.get("title") or r.get("url") or "result",
-            "url": r.get("url"),
-            "content": r.get("content") or "",
-            "score": r.get("score"),
-        }
-        for r in results
-    ]
-
-
-def _search_duckduckgo(query: str) -> list[dict]:
-    from ddgs import DDGS
-
-    results = DDGS().text(query, max_results=5) or []
-    return [
-        {
-            "title": r.get("title") or r.get("href") or "result",
-            "url": r.get("href"),
-            "content": r.get("body") or "",
-            "score": None,
-        }
-        for r in results
-    ]
 
 
 def _keep_private(query: str, config: RunnableConfig) -> tuple[str, str]:
@@ -100,12 +73,12 @@ def _keep_private(query: str, config: RunnableConfig) -> tuple[str, str]:
     return cleaned, note
 
 
-def _register_web(config: RunnableConfig, title: str, url: str | None, text: str, score=None):
+def _register_web(config: RunnableConfig, title: str, url: str | None, text: str, **extra):
     """Register a web result through the retrieval guardrail (sanitized text)."""
     return register_evidence(
         registry_from_config(config),
-        key=f"web:{url or title}",
-        source={"kind": "web", "title": title, "url": url, "score": score},
+        key=f"web:{websearch.canonical_url(url) if url else title}",
+        source={"kind": "web", "title": title, "url": url, **extra},
         text=text,
     )
 
@@ -118,100 +91,54 @@ def _clean(config: RunnableConfig, entry: dict) -> str:
 @tool
 @logs_attempt("query")
 def web_search(query: str, config: RunnableConfig) -> str:
-    """Search the public web for current events or facts not in the documents.
-
-    Returns short result snippets labelled [n]; use fetch_webpage to read one fully.
+    """Search the public web. Runs several search engines at once, re-ranks the
+    results by relevance and reads the best pages in full, so one call is
+    usually enough. Returns passages labelled [n].
     """
     query, note = _keep_private(query, config)
     if not query:
         return note + "NO_WEB_RESULTS: nothing left to search once internal names were removed."
     try:
-        results = _search_tavily(query) if settings.tavily_api_key else _search_duckduckgo(query)
-    except Exception as exc:  # noqa: BLE001 — rate limits, network errors: degrade gracefully
+        report = websearch.search(query)
+    except websearch.WebSearchUnavailable as exc:
+        return f"WEB_SEARCH_UNAVAILABLE: {exc}"
+    except Exception as exc:  # noqa: BLE001 — never let search crash the agent
         return f"WEB_SEARCH_UNAVAILABLE: {type(exc).__name__}: {exc}"
-    if not results:
-        return "NO_WEB_RESULTS: the web search returned nothing for this query."
+    if not report.hits:
+        why = " (results were found but none were relevant)" if report.dropped else ""
+        return f"NO_WEB_RESULTS: the web search returned nothing useful for this query{why}."
 
+    known = len(registry_from_config(config))  # pages an earlier search already found
     entries, bodies = [], []
-    for r in results:
-        body = r["content"][:1200]
-        entry = _register_web(config, r["title"], r["url"], body, r["score"])
+    for h in report.hits:
+        entry = _register_web(
+            config,
+            h.title,
+            h.url,
+            h.text[:1800],
+            score=h.score,
+            read=h.read,
+            date=h.date,
+            engines=h.engines,
+        )
         entries.append(entry)
         bodies.append(_clean(config, entry))
-    emit_sources("web_search", entries)
+    emit_sources("web_search", [e for e in entries if e["index"] > known])
+    emit(
+        {
+            "kind": "web_search",
+            "query": query,
+            "engines": report.engines_ok,
+            "results": len(report.hits),
+            "pages_read": report.pages_read,
+            "fresh": report.fresh,
+            "cached": report.cached,
+        }
+    )
     return note + format_evidence(entries, bodies)
 
 
 # --- fetch_webpage --------------------------------------------------------------
-
-
-class BlockedURLError(ValueError):
-    """The URL is not allowed (bad scheme, or resolves to a private address)."""
-
-
-def check_public_url(url: str) -> None:
-    """Reject URLs that could reach internal infrastructure (SSRF protection).
-
-    The URL comes from an LLM, which may have been steered by text on a web page
-    or in a document (prompt injection). Without this check, the agent could be
-    tricked into fetching http://localhost:8000/... or cloud metadata at
-    169.254.169.254 and leaking the response into its answer.
-
-    Known limit: the HTTP client resolves the host again, so a DNS-rebinding
-    attacker could swap addresses between check and fetch. Fully closing that
-    needs pinning the connection to the checked IP (or an egress proxy).
-    """
-    parsed = urlparse(url)
-    if parsed.scheme not in {"http", "https"}:
-        raise BlockedURLError(f"only http(s) URLs are allowed, got '{parsed.scheme}'")
-    host = parsed.hostname
-    if not host:
-        raise BlockedURLError("URL has no host")
-    try:
-        infos = socket.getaddrinfo(host, parsed.port or 443, proto=socket.IPPROTO_TCP)
-    except socket.gaierror as exc:
-        raise BlockedURLError(f"cannot resolve host '{host}'") from exc
-    for info in infos:
-        ip = ipaddress.ip_address(info[4][0])
-        if not ip.is_global or ip.is_multicast:
-            raise BlockedURLError(f"'{host}' resolves to a non-public address ({ip})")
-
-
-def html_to_text(html: str) -> tuple[str, str]:
-    """Main readable text and title of an HTML page."""
-    from bs4 import BeautifulSoup
-
-    soup = BeautifulSoup(html, "html.parser")
-    title = (soup.title.string or "").strip() if soup.title and soup.title.string else ""
-    for tag in soup(["script", "style", "noscript", "nav", "footer", "header", "aside", "form"]):
-        tag.decompose()
-    root = soup.find("main") or soup.find("article") or soup.body or soup
-    text = re.sub(r"\n\s*\n+", "\n\n", root.get_text("\n"))
-    text = re.sub(r"[ \t]+", " ", text).strip()
-    return text, title
-
-
-def fetch_url_text(url: str) -> tuple[str, str]:
-    """Fetch a public URL (re-checking every redirect hop) and return (text, title)."""
-    with httpx.Client(timeout=_TIMEOUT, headers={"User-Agent": USER_AGENT}) as client:
-        for _ in range(4):  # at most 3 redirects
-            check_public_url(url)
-            with client.stream("GET", url, follow_redirects=False) as resp:
-                if resp.is_redirect:
-                    url = urljoin(url, resp.headers.get("location", ""))
-                    continue
-                resp.raise_for_status()
-                ctype = resp.headers.get("content-type", "")
-                if not ctype.startswith(("text/html", "text/plain", "application/xhtml")):
-                    raise BlockedURLError(f"unsupported content type '{ctype}'")
-                body = b""
-                for chunk in resp.iter_bytes():
-                    body += chunk
-                    if len(body) > _MAX_BYTES:
-                        break
-                raw = body.decode(resp.encoding or "utf-8", errors="replace")
-                return html_to_text(raw) if "html" in ctype else (raw, "")
-        raise BlockedURLError("too many redirects")
 
 
 @tool
@@ -227,7 +154,7 @@ def fetch_webpage(url: str, config: RunnableConfig) -> str:
     if not text.strip():
         return "FETCH_FAILED: the page has no readable text."
     body = text[:_MAX_PAGE_CHARS]
-    entry = _register_web(config, title or url, url, body)
+    entry = _register_web(config, title or url, url, body, read=True)
     emit_sources("fetch_webpage", [entry])
     more = " (truncated)" if len(text) > _MAX_PAGE_CHARS else ""
     return format_evidence([entry], [_clean(config, entry) + more])
@@ -277,7 +204,9 @@ def wikipedia_lookup(topic: str, config: RunnableConfig) -> str:
     if not extract or data.get("type") == "disambiguation":
         return f"NO_WIKIPEDIA_ARTICLE: '{topic}' is ambiguous or has no summary."
     url = (data.get("content_urls") or {}).get("desktop", {}).get("page")
-    entry = _register_web(config, f"Wikipedia: {data.get('title', titles[0])}", url, extract)
+    entry = _register_web(
+        config, f"Wikipedia: {data.get('title', titles[0])}", url, extract, read=True
+    )
     emit_sources("wikipedia_lookup", [entry])
     return note + format_evidence([entry], [_clean(config, entry)])
 

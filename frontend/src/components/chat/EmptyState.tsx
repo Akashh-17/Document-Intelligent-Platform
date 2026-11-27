@@ -9,6 +9,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import type { DocumentInfo } from "@/lib/api";
+import { cn } from "@/lib/utils";
 
 interface Suggestion {
   icon: LucideIcon;
@@ -96,49 +97,62 @@ export function EmptyState({
   docs: DocumentInfo[] | null;
 }) {
   const suggestions = suggestionsFor(docs);
+  const status =
+    docs === null
+      ? null
+      : docs.length === 0
+        ? "Library empty · drop files anywhere"
+        : `${docs.length} document${docs.length === 1 ? "" : "s"} ready to search`;
   return (
     <div className="mx-auto flex min-h-full w-full max-w-[760px] flex-col justify-center px-4 py-10 sm:px-6">
-      <div className="rise mb-8 text-center sm:mb-10">
-        <h1 className="font-display text-[2rem] font-semibold leading-[1.1] tracking-[-0.03em] sm:text-[2.6rem]">
-          Ask your documents{" "}
-          <span className="relative whitespace-nowrap">
-            <span className="marker">anything</span>
+      <div className="rise mb-9 text-center sm:mb-11">
+        {status && (
+          <button
+            onClick={docs?.length ? undefined : onUpload}
+            className="mb-6 inline-flex items-center gap-2 rounded-full border border-accent/30 bg-accent/[0.07] px-3 py-1 text-xs font-medium tracking-[0.02em] text-accent/90"
+          >
+            <span
+              className={cn("h-1.5 w-1.5 rounded-full", docs?.length ? "bg-ok" : "bg-accent")}
+              aria-hidden
+            />
+            {status}
+          </button>
+        )}
+        <h1 className="text-[2.5rem] font-extrabold leading-[1.02] tracking-[-0.045em] sm:text-[3.6rem]">
+          <span className="block bg-gradient-to-b from-white to-zinc-400 bg-clip-text text-transparent">
+            Ask your documents.
           </span>
+          <span className="headline-gradient block pb-1">Get cited answers.</span>
         </h1>
-        <p className="mx-auto mt-4 max-w-lg text-balance text-[0.95rem] leading-relaxed text-muted">
-          Every answer cites its sources and is fact-checked before you see it. If the answer isn't
-          in your files or on the web, you'll be told.
+        <p className="mx-auto mt-5 max-w-md text-balance text-[0.95rem] leading-relaxed text-muted">
+          Every answer is checked against its sources before you see it. If it isn't in your files or
+          on the web, you'll be told.
         </p>
       </div>
 
-      <div className="rise [animation-delay:80ms]">{composer}</div>
+      <div className="rise relative [animation-delay:80ms]">
+        {composer}
+        <div className="horizon" aria-hidden />
+      </div>
 
-      <div className="mt-6 grid gap-2.5 sm:grid-cols-2">
+      <div className="mt-8 grid gap-2.5 sm:grid-cols-2">
         {suggestions.map(({ icon: Icon, label, question }, i) => (
           <button
             key={label}
             onClick={() => (question ? onPick(question) : onUpload())}
             style={{ animationDelay: `${140 + i * 50}ms` }}
-            className="rise group rounded-2xl border border-border bg-surface/60 px-4 py-3.5 text-left transition-colors hover:border-faint hover:bg-surface"
+            className="rise group rounded-2xl border border-border bg-surface/50 px-4 py-3.5 text-left transition-colors hover:border-zinc-700 hover:bg-surface"
           >
-            <span className="flex items-center gap-2 text-xs font-medium text-faint group-hover:text-accent">
+            <span className="flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.06em] text-faint transition-colors group-hover:text-accent">
               <Icon className="h-3.5 w-3.5" />
               {label}
             </span>
-            <span className="mt-1.5 block text-sm leading-snug text-fg/90">
+            <span className="mt-2 block text-sm leading-snug text-fg/90">
               {question ?? "Add PDFs, text or Markdown files — they're searchable right away."}
             </span>
           </button>
         ))}
       </div>
-
-      {docs !== null && (
-        <p className="mt-8 text-center font-mono text-xs text-faint">
-          {docs.length === 0
-            ? "Your library is empty — add files, or drop them anywhere on this page"
-            : `Searching ${docs.length} document${docs.length === 1 ? "" : "s"} in your library`}
-        </p>
-      )}
     </div>
   );
 }

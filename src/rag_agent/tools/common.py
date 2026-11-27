@@ -73,6 +73,8 @@ def register_chunk(registry: CitationRegistry, hit: RetrievedChunk) -> dict:
         source={
             "kind": "document",
             "title": title,
+            "document": hit.source,  # file name: the UI opens it in the viewer
+            "page": md.get("page"),  # PDF page the passage is on
             "score": round(hit.relevance, 3),
             "retrieval": hit.signals(),
         },
